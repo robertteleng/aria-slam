@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/aria_slam.dir/main.cpp.o -o aria_slam 
