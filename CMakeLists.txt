@@ -27,6 +27,7 @@ add_executable(aria_slam
     src/Frame.cpp
     src/TRTInference.cpp
     src/IMU.cpp
+    src/LoopClosure.cpp
 )
 
 target_link_libraries(aria_slam
@@ -35,6 +36,10 @@ target_link_libraries(aria_slam
     nvinfer
     cudart
     Eigen3::Eigen
+    g2o_core
+    g2o_stuff
+    g2o_types_slam3d
+    g2o_solver_eigen
 )
 
 # Experiments/benchmarks
