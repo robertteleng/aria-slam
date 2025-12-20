@@ -1,6 +1,6 @@
-# Aria SLAM - Visual SLAM System
+# Aria SLAM
 
-Sistema completo de SLAM (Simultaneous Localization and Mapping) en C++ para Meta Aria glasses.
+Sistema de Visual SLAM en C++ con aceleración GPU (CUDA/TensorRT) para navegación autónoma en tiempo real. Implementación modular que incluye Visual Odometry, feature matching, pose estimation y soporte para deep learning inference.
 
 ---
 
