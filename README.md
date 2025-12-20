@@ -159,42 +159,39 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph Hardware
-        ARIA[Aria Glasses]
-        GPU[RTX 2060]
+        GPU[NVIDIA GPU]
     end
 
-    subgraph Capture
-        RGB[RGB Camera]
-        SLAM_CAM[SLAM Cameras x2]
-        IMU_S[IMU Sensor]
+    subgraph Input
+        CAM[Camera/Video]
+        EUROC[EuRoC Dataset]
+        IMU_S[IMU Data]
     end
 
     subgraph Processing
         CUDA[OpenCV CUDA]
         TRT[TensorRT]
-        CPU[CPU Pipeline]
     end
 
     subgraph SLAM
         VO[Visual Odometry]
-        FUSION[Sensor Fusion]
-        LOOP[Loop Closure]
-        MAPPING[3D Mapping]
+        FUSION[SensorFusion EKF]
+        LOOP[Loop Closure + g2o]
+        MAPPING[Mapper]
     end
 
     subgraph Output
         TRAJ[Trajectory]
-        MAP[Point Cloud]
-        DET[Detections]
+        MAP[Point Cloud PLY]
+        DET[YOLO Detections]
     end
 
-    ARIA --> RGB
-    ARIA --> SLAM_CAM
-    ARIA --> IMU_S
-
-    RGB --> CUDA
-    CUDA --> VO
+    CAM --> CUDA
+    EUROC --> CUDA
+    EUROC --> IMU_S
     IMU_S --> FUSION
+
+    CUDA --> VO
     VO --> FUSION
     FUSION --> LOOP
     LOOP --> MAPPING
@@ -203,10 +200,10 @@ flowchart TD
     TRT --> DET
 
     MAPPING --> MAP
-    FUSION --> TRAJ
+    LOOP --> TRAJ
 
     style Hardware fill:#374151,stroke:#9ca3af,color:#fff
-    style Capture fill:#1e3a5f,stroke:#3b82f6,color:#fff
+    style Input fill:#1e3a5f,stroke:#3b82f6,color:#fff
     style Processing fill:#065f46,stroke:#10b981,color:#fff
     style SLAM fill:#4c1d95,stroke:#8b5cf6,color:#fff
     style Output fill:#7c2d12,stroke:#f97316,color:#fff
@@ -215,51 +212,60 @@ flowchart TD
 ### Layer Architecture
 
 ```mermaid
-flowchart TB
-    subgraph APP[Application Layer]
-        main[main.cpp]
-        ros[ROS2 Node]
-        cli[euroc_eval]
+flowchart LR
+    subgraph L1[" "]
+        direction TB
+        subgraph HW[Input]
+            cam[Camera/Video]
+            imu[IMU Sensor]
+            euroc[EuRoCReader]
+        end
+        subgraph PERCEP[Perception]
+            frame[Frame]
+            orb[ORB CUDA]
+            yolo[TRTInference]
+        end
     end
 
-    subgraph PIPE[Pipeline Layer]
-        slam[SLAM Pipeline]
-        orch[Orchestration]
+    subgraph L2[" "]
+        direction TB
+        subgraph FUSE[Fusion]
+            sf[SensorFusion]
+            preint[IMUPreintegrator]
+        end
+        subgraph LOOP[Loop Closure]
+            lcd[LoopClosureDetector]
+            pgo[PoseGraphOptimizer]
+        end
     end
 
-    subgraph PERCEP[Perception Layer]
-        orb[ORB CUDA]
-        yolo[YOLO TensorRT]
-        lc[Loop Closure]
+    subgraph L3[" "]
+        direction TB
+        subgraph MAP[Mapping]
+            mapper[Mapper]
+            ply[PLY Export]
+        end
+        subgraph APP[Application]
+            main[main.cpp]
+            eval[euroc_eval]
+        end
     end
 
-    subgraph FUSE[Fusion Layer]
-        ekf[EKF 15-state]
-        pg[Pose Graph]
-        g2o[g2o Optimizer]
-    end
+    HW --> PERCEP
+    PERCEP --> FUSE
+    FUSE --> LOOP
+    LOOP --> MAP
+    MAP --> APP
 
-    subgraph MAP[Mapping Layer]
-        mapper[Mapper]
-        tri[Triangulation]
-        exp[PLY/PCD Export]
-    end
-
-    subgraph HW[Hardware Layer]
-        cam[Camera]
-        imu[IMU]
-        aria[Aria SDK]
-        euroc[EuRoCReader]
-    end
-
-    APP --> PIPE --> PERCEP --> FUSE --> MAP --> HW
-
-    style APP fill:#7c2d12,stroke:#f97316,color:#fff
-    style PIPE fill:#7c3aed,stroke:#a78bfa,color:#fff
+    style HW fill:#374151,stroke:#9ca3af,color:#fff
     style PERCEP fill:#4c1d95,stroke:#8b5cf6,color:#fff
     style FUSE fill:#065f46,stroke:#10b981,color:#fff
+    style LOOP fill:#7c3aed,stroke:#a78bfa,color:#fff
     style MAP fill:#1e3a5f,stroke:#3b82f6,color:#fff
-    style HW fill:#374151,stroke:#9ca3af,color:#fff
+    style APP fill:#7c2d12,stroke:#f97316,color:#fff
+    style L1 fill:none,stroke:none
+    style L2 fill:none,stroke:none
+    style L3 fill:none,stroke:none
 ```
 
 ### Class Diagram
@@ -271,77 +277,84 @@ classDiagram
         +vector~KeyPoint~ keypoints
         +Mat descriptors
         +GpuMat gpu_descriptors
-        +Frame(Mat img, ORB orb)
+        +Frame(Mat, ORB_GPU)
+        +Frame(Mat, ORB_CPU)
     }
 
-    class VisualOdometry {
-        +Mat K
-        +Mat position
-        +Mat rotation
-        +processFrame(Frame)
-        +getTrajectory()
-    }
-
-    class EKF {
-        +VectorXd state_15D
-        +MatrixXd covariance_15x15
-        +predict(accel, gyro, dt)
-        +update(position, orientation)
+    class SensorFusion {
+        +Vector3d position
+        +Vector3d velocity
+        +Quaterniond orientation
+        +Matrix15x15 P
+        +addIMU(IMUMeasurement)
+        +addVisualPose(R, t)
+        +predictEKF()
+        +updateEKF()
     }
 
     class LoopClosureDetector {
-        +findCandidates(Frame)
-        +verifyGeometry(matches)
-        +computeRelativePose()
+        +deque~KeyFrame~ keyframes
+        +addKeyFrame(KeyFrame)
+        +detect(KeyFrame) LoopCandidate
+        +findCandidates()
+        +verifyGeometry()
     }
 
     class PoseGraphOptimizer {
-        +addVertex(pose)
-        +addOdometryEdge()
-        +addLoopEdge()
-        +optimize()
+        +setInitialPose(id, pose)
+        +addOdometryEdge(from, to, delta)
+        +addLoopEdge(from, to, delta)
+        +optimize(iterations)
+        +getOptimizedPose(id)
     }
 
     class Mapper {
         +vector~MapPoint~ points
-        +triangulate(Frame, Frame, matches)
+        +triangulate(kp1, kp2, matches, poses)
         +filterOutliers()
         +exportPLY()
+        +exportPCD()
     }
 
-    Frame --> VisualOdometry
-    VisualOdometry --> EKF
-    EKF --> LoopClosureDetector
-    LoopClosureDetector --> PoseGraphOptimizer
-    PoseGraphOptimizer --> Mapper
+    class EuRoCReader {
+        +load()
+        +getNext(image, imu, timestamp)
+        +getGroundTruth(timestamp)
+        +getCameraMatrix()
+    }
+
+    Frame --> SensorFusion : pose estimate
+    SensorFusion --> LoopClosureDetector : fused pose
+    LoopClosureDetector --> PoseGraphOptimizer : loop constraints
+    PoseGraphOptimizer --> Mapper : optimized poses
+    EuRoCReader --> Frame : images
+    EuRoCReader --> SensorFusion : IMU data
 ```
 
 ### Data Flow
 
 ```mermaid
 sequenceDiagram
-    participant C as Camera
-    participant I as IMU
-    participant VO as VisualOdometry
-    participant SF as EKF
-    participant LC as LoopClosure
+    participant ER as EuRoCReader
+    participant F as Frame
+    participant SF as SensorFusion
+    participant LCD as LoopClosureDetector
+    participant PGO as PoseGraphOptimizer
     participant M as Mapper
 
-    loop 200 Hz
-        I->>SF: accel, gyro
-        SF->>SF: predict()
-    end
-
-    loop 30 Hz
-        C->>VO: frame
-        VO->>VO: extract features (GPU)
-        VO->>VO: match (GPU)
-        VO->>VO: estimate pose
-        VO->>SF: R, t
-        SF->>SF: update()
-        SF->>LC: fused pose
-        LC->>LC: check loop
-        LC->>M: optimized pose
+    loop Each Frame
+        ER->>F: image (30 Hz)
+        ER->>SF: IMU batch (200 Hz)
+        SF->>SF: predictEKF()
+        F->>F: ORB extract (GPU)
+        F->>F: match (GPU)
+        F->>SF: R, t (recoverPose)
+        SF->>SF: updateEKF()
+        SF->>LCD: KeyFrame
+        LCD->>LCD: detect loop
+        LCD->>PGO: addLoopEdge
+        PGO->>PGO: optimize
+        PGO->>M: optimized poses
         M->>M: triangulate
     end
 ```
@@ -360,17 +373,16 @@ flowchart LR
     end
 
     subgraph GPU
-        UP[Upload]
+        UP[GpuMat Upload]
         ORB[ORB CUDA]
+        MATCH[BFMatcher CUDA]
         YOLO[YOLO TensorRT]
-        DEPTH[Depth TensorRT]
         DOWN[Download]
     end
 
     CAP --> UP
-    UP --> ORB --> DOWN
+    UP --> ORB --> MATCH --> DOWN
     UP --> YOLO --> DOWN
-    UP --> DEPTH --> DOWN
     DOWN --> OUT
 
     style CPU fill:#374151,stroke:#9ca3af,color:#fff
