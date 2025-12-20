@@ -14,7 +14,8 @@ Visual SLAM system in C++ with GPU acceleration (CUDA/TensorRT) for real-time au
 6. [Code Structure](#code-structure)
 7. [Dependencies](#dependencies)
 8. [Build & Run](#build--run)
-9. [References](#references)
+9. [Glossary](#glossary)
+10. [References](#references)
 
 ---
 
@@ -61,6 +62,10 @@ flowchart LR
         I[IMU]
     end
 
+    subgraph Process
+        SLAM((SLAM))
+    end
+
     subgraph Output
         T[Trajectory]
         M[3D Map]
@@ -70,30 +75,34 @@ flowchart LR
     I --> SLAM
     SLAM --> T
     SLAM --> M
+
+    style Input fill:#1e3a5f,stroke:#3b82f6,color:#fff
+    style Process fill:#065f46,stroke:#10b981,color:#fff
+    style Output fill:#7c2d12,stroke:#f97316,color:#fff
 ```
 
 ### The Solution (Complete Pipeline)
 
 ```mermaid
 flowchart TD
-    subgraph Sensors["Sensors"]
+    subgraph Sensors
         CAM[Camera 30Hz]
         IMU[IMU 200Hz]
     end
 
-    subgraph Frontend["Frontend"]
+    subgraph Frontend
         FE[Feature Extraction]
         FM[Feature Matching]
         PE[Pose Estimation]
     end
 
-    subgraph Backend["Backend"]
+    subgraph Backend
         SF[Sensor Fusion]
         LC[Loop Closure]
         OPT[Optimization]
     end
 
-    subgraph Output["Output"]
+    subgraph Output
         TRAJ[Trajectory]
         MAP[3D Map]
     end
@@ -105,6 +114,11 @@ flowchart TD
     LC --> OPT
     OPT --> TRAJ
     OPT --> MAP
+
+    style Sensors fill:#1e3a5f,stroke:#3b82f6,color:#fff
+    style Frontend fill:#4c1d95,stroke:#8b5cf6,color:#fff
+    style Backend fill:#065f46,stroke:#10b981,color:#fff
+    style Output fill:#7c2d12,stroke:#f97316,color:#fff
 ```
 
 ### Key Components
@@ -144,31 +158,31 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph Hardware["Hardware"]
+    subgraph Hardware
         ARIA[Aria Glasses]
         GPU[RTX 2060]
     end
 
-    subgraph Capture["Capture"]
+    subgraph Capture
         RGB[RGB Camera]
         SLAM_CAM[SLAM Cameras x2]
         IMU_S[IMU Sensor]
     end
 
-    subgraph Processing["Processing"]
+    subgraph Processing
         CUDA[OpenCV CUDA]
         TRT[TensorRT]
         CPU[CPU Pipeline]
     end
 
-    subgraph SLAM["SLAM"]
+    subgraph SLAM
         VO[Visual Odometry]
         FUSION[Sensor Fusion]
         LOOP[Loop Closure]
         MAPPING[3D Mapping]
     end
 
-    subgraph Output["Output"]
+    subgraph Output
         TRAJ[Trajectory]
         MAP[Point Cloud]
         DET[Detections]
@@ -190,30 +204,62 @@ flowchart TD
 
     MAPPING --> MAP
     FUSION --> TRAJ
+
+    style Hardware fill:#374151,stroke:#9ca3af,color:#fff
+    style Capture fill:#1e3a5f,stroke:#3b82f6,color:#fff
+    style Processing fill:#065f46,stroke:#10b981,color:#fff
+    style SLAM fill:#4c1d95,stroke:#8b5cf6,color:#fff
+    style Output fill:#7c2d12,stroke:#f97316,color:#fff
 ```
 
 ### Layer Architecture
 
-```
-┌─────────────────────────────────────────┐
-│            Application Layer            │
-│         (main, ROS node, CLI)           │
-├─────────────────────────────────────────┤
-│            Pipeline Layer               │
-│      (SlamPipeline, orchestration)      │
-├─────────────────────────────────────────┤
-│           Perception Layer              │
-│    (ORB, YOLO, Depth, LoopClosure)      │
-├─────────────────────────────────────────┤
-│            Fusion Layer                 │
-│         (EKF, PoseGraph, g2o)           │
-├─────────────────────────────────────────┤
-│            Mapping Layer                │
-│      (Mapper, PointCloud, Export)       │
-├─────────────────────────────────────────┤
-│           Hardware Layer                │
-│   (Camera, IMU, Aria, EuRoCReader)      │
-└─────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph APP[Application Layer]
+        main[main.cpp]
+        ros[ROS2 Node]
+        cli[euroc_eval]
+    end
+
+    subgraph PIPE[Pipeline Layer]
+        slam[SLAM Pipeline]
+        orch[Orchestration]
+    end
+
+    subgraph PERCEP[Perception Layer]
+        orb[ORB CUDA]
+        yolo[YOLO TensorRT]
+        lc[Loop Closure]
+    end
+
+    subgraph FUSE[Fusion Layer]
+        ekf[EKF 15-state]
+        pg[Pose Graph]
+        g2o[g2o Optimizer]
+    end
+
+    subgraph MAP[Mapping Layer]
+        mapper[Mapper]
+        tri[Triangulation]
+        exp[PLY/PCD Export]
+    end
+
+    subgraph HW[Hardware Layer]
+        cam[Camera]
+        imu[IMU]
+        aria[Aria SDK]
+        euroc[EuRoCReader]
+    end
+
+    APP --> PIPE --> PERCEP --> FUSE --> MAP --> HW
+
+    style APP fill:#7c2d12,stroke:#f97316,color:#fff
+    style PIPE fill:#7c3aed,stroke:#a78bfa,color:#fff
+    style PERCEP fill:#4c1d95,stroke:#8b5cf6,color:#fff
+    style FUSE fill:#065f46,stroke:#10b981,color:#fff
+    style MAP fill:#1e3a5f,stroke:#3b82f6,color:#fff
+    style HW fill:#374151,stroke:#9ca3af,color:#fff
 ```
 
 ### Class Diagram
@@ -326,13 +372,16 @@ flowchart LR
     UP --> YOLO --> DOWN
     UP --> DEPTH --> DOWN
     DOWN --> OUT
+
+    style CPU fill:#374151,stroke:#9ca3af,color:#fff
+    style GPU fill:#065f46,stroke:#10b981,color:#fff
 ```
 
 ### Sensor Fusion Pipeline (H8)
 
 ```mermaid
 flowchart TD
-    subgraph IMU["IMU 200Hz"]
+    subgraph IMU[IMU 200Hz]
         ACC[Accelerometer]
         GYRO[Gyroscope]
     end
@@ -344,7 +393,7 @@ flowchart TD
         D["P = F*P*F' + Q"]
     end
 
-    subgraph VO["VO 30Hz"]
+    subgraph VO[VO 30Hz]
         POSE[Pose R,t]
     end
 
@@ -359,6 +408,11 @@ flowchart TD
     Predict --> Update
     POSE --> Update
     Update --> OUTPUT[Fused Pose]
+
+    style IMU fill:#1e3a5f,stroke:#3b82f6,color:#fff
+    style Predict fill:#4c1d95,stroke:#8b5cf6,color:#fff
+    style VO fill:#065f46,stroke:#10b981,color:#fff
+    style Update fill:#7c2d12,stroke:#f97316,color:#fff
 ```
 
 ### Loop Closure Pipeline (H9)
@@ -383,6 +437,10 @@ flowchart TD
     end
 
     INLIERS -->|No| REJECT[Reject]
+
+    style Detection fill:#1e3a5f,stroke:#3b82f6,color:#fff
+    style Verification fill:#4c1d95,stroke:#8b5cf6,color:#fff
+    style Optimization fill:#065f46,stroke:#10b981,color:#fff
 ```
 
 ### Mapping Pipeline (H10)
@@ -413,6 +471,10 @@ flowchart LR
     TRI --> FILT --> PC
     PC --> VIS
     PC --> EXP
+
+    style Input fill:#1e3a5f,stroke:#3b82f6,color:#fff
+    style Triangulation fill:#4c1d95,stroke:#8b5cf6,color:#fff
+    style Output fill:#7c2d12,stroke:#f97316,color:#fff
 ```
 
 ---
@@ -731,6 +793,51 @@ export LIBGL_ALWAYS_SOFTWARE=1
 | GPU Usage | ~200MB VRAM |
 | YOLO Inference | ~5ms |
 | ORB Extraction | ~10ms (GPU) |
+
+---
+
+## Glossary
+
+### Acronyms
+
+| Acronym | Full Name | Description |
+|---------|-----------|-------------|
+| **SLAM** | Simultaneous Localization and Mapping | Building a map while tracking position |
+| **VO** | Visual Odometry | Estimating motion from camera images |
+| **VIO** | Visual-Inertial Odometry | VO combined with IMU data |
+| **IMU** | Inertial Measurement Unit | Accelerometer + gyroscope sensor |
+| **EKF** | Extended Kalman Filter | Nonlinear state estimation algorithm |
+| **ORB** | Oriented FAST and Rotated BRIEF | Feature detector + descriptor |
+| **RANSAC** | Random Sample Consensus | Robust estimation with outliers |
+| **ATE** | Absolute Trajectory Error | Global position accuracy metric |
+| **RPE** | Relative Pose Error | Local motion accuracy metric |
+| **DoF** | Degrees of Freedom | Number of independent motions (6DoF = 3 translation + 3 rotation) |
+| **FPS** | Frames Per Second | Processing speed |
+| **GPU** | Graphics Processing Unit | Parallel processor for acceleration |
+| **CUDA** | Compute Unified Device Architecture | NVIDIA GPU programming platform |
+| **TRT** | TensorRT | NVIDIA deep learning inference optimizer |
+| **ROS** | Robot Operating System | Robotics middleware framework |
+| **PLY** | Polygon File Format | 3D point cloud format |
+| **PCD** | Point Cloud Data | PCL native point cloud format |
+
+### Technical Terms
+
+| Term | Description |
+|------|-------------|
+| **Keypoint** | Distinctive point in image (corner, blob) |
+| **Descriptor** | Binary/float vector describing a keypoint |
+| **Feature matching** | Finding corresponding keypoints between images |
+| **Essential matrix** | Relates two calibrated camera views (encodes R, t) |
+| **Fundamental matrix** | Relates two uncalibrated views |
+| **Triangulation** | Computing 3D point from 2+ 2D observations |
+| **Loop closure** | Detecting revisited locations to correct drift |
+| **Pose graph** | Graph where nodes=poses, edges=constraints |
+| **Bundle adjustment** | Joint optimization of poses and 3D points |
+| **Drift** | Accumulated error over time |
+| **Keyframe** | Selected frame stored for mapping/loop closure |
+| **Covisibility** | Frames that observe same map points |
+| **Preintegration** | Combining multiple IMU measurements between frames |
+| **Marginalization** | Removing old states while preserving information |
 
 ---
 
