@@ -28,6 +28,7 @@ add_executable(aria_slam
     src/TRTInference.cpp
     src/IMU.cpp
     src/LoopClosure.cpp
+    src/Mapper.cpp
 )
 
 target_link_libraries(aria_slam

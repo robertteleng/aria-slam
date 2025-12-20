@@ -391,7 +391,7 @@ flowchart LR
 | H7 | Aria Integration | Aria SDK, sensor capture | Pending |
 | H8 | Sensor Fusion | IMU preintegration, Kalman filter | Done |
 | H9 | Loop Closure | g2o pose graph optimization | Done |
-| H10 | 3D Mapping | Triangulation, point cloud | Pending |
+| H10 | 3D Mapping | Triangulation, point cloud, PLY export | Done |
 
 ### Visual Progress
 
@@ -412,9 +412,10 @@ gantt
 
     H9 Loop Closure    :done, h9, 7, 8
 
+    H10 Mapping        :done, h10, 8, 9
+
     section Pending
-    H7 Aria            :h7, 8, 9
-    H10 Mapping        :h10, 9, 10
+    H7 Aria            :h7, 9, 10
 ```
 
 ---
@@ -430,13 +431,15 @@ aria-slam/
 │   ├── TRTInference.hpp   # TensorRT YOLO inference
 │   ├── IMU.hpp            # EKF sensor fusion (15-state)
 │   ├── LoopClosure.hpp    # Loop detection and pose graph
+│   ├── Mapper.hpp         # 3D point cloud mapping
 │   └── SyntheticIMU.hpp   # Synthetic IMU for testing
 ├── src/
 │   ├── main.cpp           # Main SLAM pipeline
 │   ├── Frame.cpp          # Frame implementation
 │   ├── TRTInference.cpp   # TensorRT implementation
 │   ├── IMU.cpp            # EKF implementation
-│   └── LoopClosure.cpp    # g2o pose graph optimization
+│   ├── LoopClosure.cpp    # g2o pose graph optimization
+│   └── Mapper.cpp         # Triangulation and PLY/PCD export
 ├── experiments/
 │   └── benchmark_imu.cpp  # IMU fusion benchmark
 ├── models/
