@@ -10,6 +10,21 @@ static Eigen::Matrix3d skew(const Eigen::Vector3d& v) {
     return m;
 }
 
+// Convert rotation vector to quaternion
+static Eigen::Quaterniond expMap(const Eigen::Vector3d& theta) {
+    double angle = theta.norm();
+    if (angle < 1e-10) {
+        return Eigen::Quaterniond::Identity();
+    }
+    return Eigen::Quaterniond(Eigen::AngleAxisd(angle, theta.normalized()));
+}
+
+// Convert quaternion to rotation vector
+static Eigen::Vector3d logMap(const Eigen::Quaterniond& q) {
+    Eigen::AngleAxisd aa(q);
+    return aa.angle() * aa.axis();
+}
+
 // ============== IMUPreintegrator ==============
 
 IMUPreintegrator::IMUPreintegrator(const Eigen::Vector3d& gravity)
@@ -65,7 +80,7 @@ void IMUPreintegrator::integrate(const IMUMeasurement& measurement) {
     delta_q_ = delta_q_ * dq;
     delta_q_.normalize();
 
-    // Covariance propagation (simplified)
+    // Covariance propagation
     Eigen::Matrix<double, 9, 9> F = Eigen::Matrix<double, 9, 9>::Identity();
     F.block<3, 3>(0, 3) = Eigen::Matrix3d::Identity() * dt;
     F.block<3, 3>(3, 6) = -delta_q_.toRotationMatrix() * skew(accel) * dt;
@@ -84,14 +99,28 @@ void IMUPreintegrator::integrate(const IMUMeasurement& measurement) {
     last_timestamp_ = measurement.timestamp;
 }
 
-// ============== SensorFusion ==============
+// ============== SensorFusion (EKF) ==============
 
 SensorFusion::SensorFusion() {
-    P_.block<3, 3>(0, 0) *= 0.01;   // Position uncertainty
-    P_.block<3, 3>(3, 3) *= 0.01;   // Velocity uncertainty
-    P_.block<3, 3>(6, 6) *= 0.01;   // Orientation uncertainty
-    P_.block<3, 3>(9, 9) *= 0.001;  // Accel bias uncertainty
-    P_.block<3, 3>(12, 12) *= 0.0001; // Gyro bias uncertainty
+    // Initialize state covariance
+    P_.setIdentity();
+    P_.block<3, 3>(0, 0) *= 0.01;     // Position (m^2)
+    P_.block<3, 3>(3, 3) *= 0.01;     // Velocity (m/s)^2
+    P_.block<3, 3>(6, 6) *= 0.01;     // Orientation (rad^2)
+    P_.block<3, 3>(9, 9) *= 0.001;    // Accel bias
+    P_.block<3, 3>(12, 12) *= 0.0001; // Gyro bias
+
+    // Process noise (IMU noise)
+    Q_.setZero();
+    Q_.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity() * accel_noise_ * accel_noise_;
+    Q_.block<3, 3>(3, 3) = Eigen::Matrix3d::Identity() * gyro_noise_ * gyro_noise_;
+    Q_.block<3, 3>(6, 6) = Eigen::Matrix3d::Identity() * accel_bias_walk_ * accel_bias_walk_;
+    Q_.block<3, 3>(9, 9) = Eigen::Matrix3d::Identity() * gyro_bias_walk_ * gyro_bias_walk_;
+
+    // Measurement noise (visual)
+    R_meas_.setZero();
+    R_meas_.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity() * pos_noise_ * pos_noise_;
+    R_meas_.block<3, 3>(3, 3) = Eigen::Matrix3d::Identity() * rot_noise_ * rot_noise_;
 }
 
 void SensorFusion::addIMU(const IMUMeasurement& imu) {
@@ -103,28 +132,32 @@ void SensorFusion::addIMU(const IMUMeasurement& imu) {
     }
 
     if (initialized_) {
-        predictIMU(imu);
+        predictEKF(imu);
     }
 }
 
-void SensorFusion::predictIMU(const IMUMeasurement& imu) {
-    static double last_imu_time = -1;
-    if (last_imu_time < 0) {
-        last_imu_time = imu.timestamp;
+void SensorFusion::predictEKF(const IMUMeasurement& imu) {
+    if (last_imu_time_ < 0) {
+        last_imu_time_ = imu.timestamp;
         return;
     }
 
-    double dt = imu.timestamp - last_imu_time;
+    double dt = imu.timestamp - last_imu_time_;
     if (dt <= 0 || dt > 0.1) {
-        last_imu_time = imu.timestamp;
+        last_imu_time_ = imu.timestamp;
         return;
     }
 
-    // Remove bias
+    // Remove bias from measurements
     Eigen::Vector3d accel = imu.accel - bias_.accel_bias;
     Eigen::Vector3d gyro = imu.gyro - bias_.gyro_bias;
 
-    // Integrate orientation
+    // Get current rotation matrix
+    Eigen::Matrix3d R = orientation_.toRotationMatrix();
+
+    // ========== State Prediction ==========
+
+    // Orientation prediction
     Eigen::Vector3d delta_angle = gyro * dt;
     double angle = delta_angle.norm();
     if (angle > 1e-10) {
@@ -133,14 +166,59 @@ void SensorFusion::predictIMU(const IMUMeasurement& imu) {
         orientation_.normalize();
     }
 
-    // Rotate acceleration to world frame and remove gravity
-    Eigen::Vector3d accel_world = orientation_ * accel + gravity_;
+    // Acceleration in world frame (remove gravity)
+    Eigen::Vector3d accel_world = R * accel + gravity_;
 
-    // Integrate velocity and position
-    velocity_ += accel_world * dt;
+    // Velocity and position prediction
     position_ += velocity_ * dt + 0.5 * accel_world * dt * dt;
+    velocity_ += accel_world * dt;
 
-    last_imu_time = imu.timestamp;
+    // ========== Covariance Prediction ==========
+
+    // State transition Jacobian F (15x15)
+    Eigen::Matrix<double, 15, 15> F = Eigen::Matrix<double, 15, 15>::Identity();
+
+    // dp/dv
+    F.block<3, 3>(0, 3) = Eigen::Matrix3d::Identity() * dt;
+
+    // dp/dtheta (position depends on orientation through acceleration)
+    F.block<3, 3>(0, 6) = -0.5 * R * skew(accel) * dt * dt;
+
+    // dp/dba (position depends on accel bias)
+    F.block<3, 3>(0, 9) = -0.5 * R * dt * dt;
+
+    // dv/dtheta
+    F.block<3, 3>(3, 6) = -R * skew(accel) * dt;
+
+    // dv/dba
+    F.block<3, 3>(3, 9) = -R * dt;
+
+    // dtheta/dbg
+    F.block<3, 3>(6, 12) = -Eigen::Matrix3d::Identity() * dt;
+
+    // Noise Jacobian G (15x12)
+    Eigen::Matrix<double, 15, 12> G = Eigen::Matrix<double, 15, 12>::Zero();
+
+    // Position affected by accel noise
+    G.block<3, 3>(0, 0) = 0.5 * R * dt * dt;
+
+    // Velocity affected by accel noise
+    G.block<3, 3>(3, 0) = R * dt;
+
+    // Orientation affected by gyro noise
+    G.block<3, 3>(6, 3) = Eigen::Matrix3d::Identity() * dt;
+
+    // Bias random walk
+    G.block<3, 3>(9, 6) = Eigen::Matrix3d::Identity() * dt;
+    G.block<3, 3>(12, 9) = Eigen::Matrix3d::Identity() * dt;
+
+    // Propagate covariance: P = F * P * F' + G * Q * G'
+    P_ = F * P_ * F.transpose() + G * Q_ * G.transpose();
+
+    // Ensure symmetry
+    P_ = 0.5 * (P_ + P_.transpose());
+
+    last_imu_time_ = imu.timestamp;
 }
 
 void SensorFusion::addVisualPose(double timestamp, const Eigen::Matrix3d& R, const Eigen::Vector3d& t) {
@@ -150,46 +228,13 @@ void SensorFusion::addVisualPose(double timestamp, const Eigen::Matrix3d& R, con
         orientation_ = Eigen::Quaterniond(R);
         velocity_ = Eigen::Vector3d::Zero();
         last_visual_time_ = timestamp;
+        last_imu_time_ = timestamp;
         initialized_ = true;
-        preintegrator_.reset();
-        std::cout << "Sensor fusion initialized" << std::endl;
+        std::cout << "EKF Sensor fusion initialized" << std::endl;
         return;
     }
 
-    // Preintegrate IMU between visual frames
-    preintegrator_.reset();
-    for (const auto& imu : imu_buffer_) {
-        if (imu.timestamp > last_visual_time_ && imu.timestamp <= timestamp) {
-            preintegrator_.integrate(imu);
-        }
-    }
-
-    // Simple fusion: weighted average between IMU prediction and visual
-    double dt = timestamp - last_visual_time_;
-    if (dt > 0 && dt < 1.0) {
-        // Visual weight (higher = trust visual more)
-        double visual_weight = 0.8;
-
-        // IMU predicted position
-        Eigen::Vector3d imu_predicted_pos = position_ + velocity_ * dt +
-                                            preintegrator_.getDeltaPosition();
-
-        // Fuse position
-        position_ = visual_weight * t + (1.0 - visual_weight) * imu_predicted_pos;
-
-        // Update velocity from visual (finite difference)
-        Eigen::Vector3d visual_velocity = (t - position_) / dt;
-        velocity_ = visual_weight * visual_velocity + (1.0 - visual_weight) * velocity_;
-
-        // Fuse orientation (SLERP)
-        Eigen::Quaterniond visual_q(R);
-        orientation_ = orientation_.slerp(visual_weight, visual_q);
-        orientation_.normalize();
-    } else {
-        // Large gap, reset to visual
-        position_ = t;
-        orientation_ = Eigen::Quaterniond(R);
-    }
+    updateEKF(R, t);
 
     // Clear old IMU data
     while (!imu_buffer_.empty() && imu_buffer_.front().timestamp < timestamp) {
@@ -197,5 +242,64 @@ void SensorFusion::addVisualPose(double timestamp, const Eigen::Matrix3d& R, con
     }
 
     last_visual_time_ = timestamp;
-    preintegrator_.reset();
+}
+
+void SensorFusion::updateEKF(const Eigen::Matrix3d& R_meas, const Eigen::Vector3d& t_meas) {
+    // ========== Measurement Model ==========
+    // z = [position, orientation_error]
+    // h(x) = [position, 0] (orientation error is zero when aligned)
+
+    // Measurement Jacobian H (6x15)
+    Eigen::Matrix<double, 6, 15> H = Eigen::Matrix<double, 6, 15>::Zero();
+    H.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();  // Position measurement
+    H.block<3, 3>(3, 6) = Eigen::Matrix3d::Identity();  // Orientation measurement
+
+    // ========== Innovation ==========
+
+    // Position innovation
+    Eigen::Vector3d pos_innov = t_meas - position_;
+
+    // Orientation innovation (error between measured and predicted)
+    Eigen::Quaterniond q_meas(R_meas);
+    Eigen::Quaterniond q_err = q_meas * orientation_.inverse();
+    q_err.normalize();
+
+    // Convert to rotation vector
+    Eigen::Vector3d rot_innov = logMap(q_err);
+
+    // Combined innovation
+    Eigen::Matrix<double, 6, 1> innovation;
+    innovation << pos_innov, rot_innov;
+
+    // ========== Kalman Gain ==========
+    // K = P * H' * (H * P * H' + R)^-1
+
+    Eigen::Matrix<double, 6, 6> S = H * P_ * H.transpose() + R_meas_;
+    Eigen::Matrix<double, 15, 6> K = P_ * H.transpose() * S.inverse();
+
+    // ========== State Update ==========
+    Eigen::Matrix<double, 15, 1> dx = K * innovation;
+
+    // Update position
+    position_ += dx.segment<3>(0);
+
+    // Update velocity
+    velocity_ += dx.segment<3>(3);
+
+    // Update orientation (apply error quaternion)
+    Eigen::Quaterniond dq = expMap(dx.segment<3>(6));
+    orientation_ = dq * orientation_;
+    orientation_.normalize();
+
+    // Update biases
+    bias_.accel_bias += dx.segment<3>(9);
+    bias_.gyro_bias += dx.segment<3>(12);
+
+    // ========== Covariance Update ==========
+    // P = (I - K * H) * P * (I - K * H)' + K * R * K'  (Joseph form for stability)
+    Eigen::Matrix<double, 15, 15> I_KH = Eigen::Matrix<double, 15, 15>::Identity() - K * H;
+    P_ = I_KH * P_ * I_KH.transpose() + K * R_meas_ * K.transpose();
+
+    // Ensure symmetry
+    P_ = 0.5 * (P_ + P_.transpose());
 }

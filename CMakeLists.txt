@@ -37,12 +37,12 @@ target_link_libraries(aria_slam
     Eigen3::Eigen
 )
 
-# IMU test executable
-add_executable(test_imu
-    src/test_imu.cpp
+# Experiments/benchmarks
+add_executable(benchmark_imu
+    experiments/benchmark_imu.cpp
     src/IMU.cpp
 )
 
-target_link_libraries(test_imu
+target_link_libraries(benchmark_imu
     Eigen3::Eigen
 )

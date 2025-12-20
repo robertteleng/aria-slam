@@ -427,14 +427,15 @@ aria-slam/
 ├── include/
 │   ├── Frame.hpp          # Frame with keypoints and descriptors
 │   ├── TRTInference.hpp   # TensorRT YOLO inference
-│   ├── IMU.hpp            # IMU preintegration and sensor fusion
+│   ├── IMU.hpp            # EKF sensor fusion (15-state)
 │   └── SyntheticIMU.hpp   # Synthetic IMU for testing
 ├── src/
 │   ├── main.cpp           # Main SLAM pipeline
 │   ├── Frame.cpp          # Frame implementation
 │   ├── TRTInference.cpp   # TensorRT implementation
-│   ├── IMU.cpp            # Sensor fusion implementation
-│   └── test_imu.cpp       # IMU fusion test
+│   └── IMU.cpp            # EKF implementation
+├── experiments/
+│   └── benchmark_imu.cpp  # IMU fusion benchmark
 ├── models/
 │   └── yolov12s.engine    # YOLOv12s TensorRT engine
 ├── build/

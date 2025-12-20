@@ -50,6 +50,16 @@ private:
     double gyro_noise_ = 0.001;  // rad/s/sqrt(Hz)
 };
 
+/**
+ * Extended Kalman Filter for Visual-Inertial Fusion
+ *
+ * State vector (15 dimensions):
+ *   [0-2]   position (x, y, z)
+ *   [3-5]   velocity (vx, vy, vz)
+ *   [6-8]   orientation error (rotation vector)
+ *   [9-11]  accelerometer bias
+ *   [12-14] gyroscope bias
+ */
 class SensorFusion {
 public:
     SensorFusion();
@@ -61,12 +71,17 @@ public:
     Eigen::Vector3d getPosition() const { return position_; }
     Eigen::Vector3d getVelocity() const { return velocity_; }
     Eigen::Quaterniond getOrientation() const { return orientation_; }
+    IMUBias getBias() const { return bias_; }
+    Eigen::Matrix<double, 15, 15> getCovariance() const { return P_; }
 
     bool isInitialized() const { return initialized_; }
 
 private:
-    void predictIMU(const IMUMeasurement& imu);
-    void updateVisual(const Eigen::Matrix3d& R, const Eigen::Vector3d& t);
+    // EKF Predict step (IMU propagation)
+    void predictEKF(const IMUMeasurement& imu);
+
+    // EKF Update step (visual measurement)
+    void updateEKF(const Eigen::Matrix3d& R, const Eigen::Vector3d& t);
 
     // State
     Eigen::Vector3d position_ = Eigen::Vector3d::Zero();
@@ -75,15 +90,29 @@ private:
 
     // IMU buffer for preintegration
     std::deque<IMUMeasurement> imu_buffer_;
-    IMUPreintegrator preintegrator_;
     IMUBias bias_;
 
-    // Kalman filter state
-    Eigen::Matrix<double, 15, 15> P_ = Eigen::Matrix<double, 15, 15>::Identity();
+    // EKF covariance matrix (15x15)
+    Eigen::Matrix<double, 15, 15> P_;
+
+    // Process noise covariance
+    Eigen::Matrix<double, 12, 12> Q_;  // accel_noise, gyro_noise, accel_bias_walk, gyro_bias_walk
+
+    // Measurement noise covariance
+    Eigen::Matrix<double, 6, 6> R_meas_;  // position and orientation noise
 
     // Gravity in world frame
     Eigen::Vector3d gravity_{0, 0, -9.81};
 
+    // Noise parameters
+    double accel_noise_ = 0.1;        // m/s^2/sqrt(Hz)
+    double gyro_noise_ = 0.01;        // rad/s/sqrt(Hz)
+    double accel_bias_walk_ = 0.001;  // m/s^3/sqrt(Hz)
+    double gyro_bias_walk_ = 0.0001;  // rad/s^2/sqrt(Hz)
+    double pos_noise_ = 0.01;         // m
+    double rot_noise_ = 0.01;         // rad
+
+    double last_imu_time_ = -1.0;
     double last_visual_time_ = -1.0;
     bool initialized_ = false;
 };
