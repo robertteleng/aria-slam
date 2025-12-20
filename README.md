@@ -78,7 +78,7 @@ flowchart LR
 flowchart TD
     subgraph Sensors["Sensors"]
         CAM[Camera 30Hz]
-        IMU[IMU 1000Hz]
+        IMU[IMU 200Hz]
     end
 
     subgraph Frontend["Frontend"]
@@ -121,17 +121,20 @@ flowchart TD
 - Essential Matrix relates 2 views
 - Recover Pose extracts rotation and translation
 
-**4. Sensor Fusion (Kalman Filter)**
-- IMU predicts pose at 1000 Hz
+**4. Sensor Fusion (Extended Kalman Filter)**
+- IMU predicts pose at 200 Hz
 - VO corrects drift at 30 Hz
+- 15-state vector (position, velocity, orientation, biases)
 
-**5. Loop Closure (DBoW2)**
-- Detects revisited places
-- Bag of Words compares frames
+**5. Loop Closure (g2o)**
+- Detects revisited places via ORB matching
+- RANSAC geometric verification
+- Pose graph optimization corrects drift
 
 **6. Mapping (Triangulation)**
 - Converts 2D matches to 3D points
-- Generates point cloud of the environment
+- Filters outliers (depth, parallax, reprojection)
+- Exports to PLY/PCD formats
 
 ---
 
@@ -189,6 +192,30 @@ flowchart TD
     FUSION --> TRAJ
 ```
 
+### Layer Architecture
+
+```
+┌─────────────────────────────────────────┐
+│            Application Layer            │
+│         (main, ROS node, CLI)           │
+├─────────────────────────────────────────┤
+│            Pipeline Layer               │
+│      (SlamPipeline, orchestration)      │
+├─────────────────────────────────────────┤
+│           Perception Layer              │
+│    (ORB, YOLO, Depth, LoopClosure)      │
+├─────────────────────────────────────────┤
+│            Fusion Layer                 │
+│         (EKF, PoseGraph, g2o)           │
+├─────────────────────────────────────────┤
+│            Mapping Layer                │
+│      (Mapper, PointCloud, Export)       │
+├─────────────────────────────────────────┤
+│           Hardware Layer                │
+│   (Camera, IMU, Aria, EuRoCReader)      │
+└─────────────────────────────────────────┘
+```
+
 ### Class Diagram
 
 ```mermaid
@@ -197,6 +224,7 @@ classDiagram
         +Mat image
         +vector~KeyPoint~ keypoints
         +Mat descriptors
+        +GpuMat gpu_descriptors
         +Frame(Mat img, ORB orb)
     }
 
@@ -208,29 +236,38 @@ classDiagram
         +getTrajectory()
     }
 
-    class SensorFusion {
-        +VectorXd state
-        +MatrixXd covariance
-        +predict(IMUData)
-        +update(VOData)
+    class EKF {
+        +VectorXd state_15D
+        +MatrixXd covariance_15x15
+        +predict(accel, gyro, dt)
+        +update(position, orientation)
     }
 
-    class LoopClosure {
-        +OrbDatabase db
-        +detect(Frame)
+    class LoopClosureDetector {
+        +findCandidates(Frame)
+        +verifyGeometry(matches)
+        +computeRelativePose()
+    }
+
+    class PoseGraphOptimizer {
+        +addVertex(pose)
+        +addOdometryEdge()
+        +addLoopEdge()
         +optimize()
     }
 
     class Mapper {
-        +PointCloud cloud
-        +triangulate(Frame, Frame)
-        +getMap()
+        +vector~MapPoint~ points
+        +triangulate(Frame, Frame, matches)
+        +filterOutliers()
+        +exportPLY()
     }
 
     Frame --> VisualOdometry
-    VisualOdometry --> SensorFusion
-    SensorFusion --> LoopClosure
-    LoopClosure --> Mapper
+    VisualOdometry --> EKF
+    EKF --> LoopClosureDetector
+    LoopClosureDetector --> PoseGraphOptimizer
+    PoseGraphOptimizer --> Mapper
 ```
 
 ### Data Flow
@@ -240,19 +277,19 @@ sequenceDiagram
     participant C as Camera
     participant I as IMU
     participant VO as VisualOdometry
-    participant SF as SensorFusion
+    participant SF as EKF
     participant LC as LoopClosure
     participant M as Mapper
 
-    loop 1000 Hz
+    loop 200 Hz
         I->>SF: accel, gyro
         SF->>SF: predict()
     end
 
     loop 30 Hz
         C->>VO: frame
-        VO->>VO: extract features
-        VO->>VO: match
+        VO->>VO: extract features (GPU)
+        VO->>VO: match (GPU)
         VO->>VO: estimate pose
         VO->>SF: R, t
         SF->>SF: update()
@@ -295,14 +332,16 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph IMU["IMU 1000Hz"]
+    subgraph IMU["IMU 200Hz"]
         ACC[Accelerometer]
         GYRO[Gyroscope]
     end
 
     subgraph Predict
-        A["state = A*state + B*accel"]
-        B["P = A*P*A' + Q"]
+        A["position += velocity * dt"]
+        B["velocity += (R*(accel-bias) + g) * dt"]
+        C["orientation *= expMap((gyro-bias)*dt)"]
+        D["P = F*P*F' + Q"]
     end
 
     subgraph VO["VO 30Hz"]
@@ -310,8 +349,9 @@ flowchart TD
     end
 
     subgraph Update
-        C["K = P*H'*(H*P*H' + R)^-1"]
-        D["state = state + K*(z - H*state)"]
+        E["K = P*H'*(H*P*H' + R)^-1"]
+        F["state += K*(z - H*state)"]
+        G["P = (I-K*H)*P*(I-K*H)' + K*R*K'"]
     end
 
     ACC --> Predict
@@ -326,24 +366,23 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph Detection
-        F[Frame] --> BOW[Bag of Words]
-        BOW --> DB[(Database)]
-        DB --> QUERY[Query Similar]
-        QUERY --> CAND[Candidates]
+        F[Frame] --> ORB[ORB Matching]
+        ORB --> RATIO[Ratio Test 0.7]
+        RATIO --> CAND[Candidates]
     end
 
     subgraph Verification
-        CAND --> GEOM[Geometric Check]
-        GEOM --> VALID{Valid?}
+        CAND --> RANSAC[RANSAC + Fundamental]
+        RANSAC --> INLIERS{>30 inliers?}
     end
 
     subgraph Optimization
-        VALID -->|Yes| GRAPH[Pose Graph]
-        GRAPH --> OPT[Optimize]
+        INLIERS -->|Yes| GRAPH[g2o Pose Graph]
+        GRAPH --> OPT[Levenberg-Marquardt]
         OPT --> CORRECT[Corrected Trajectory]
     end
 
-    VALID -->|No| REJECT[Reject]
+    INLIERS -->|No| REJECT[Reject]
 ```
 
 ### Mapping Pipeline (H10)
@@ -357,15 +396,15 @@ flowchart LR
     end
 
     subgraph Triangulation
-        PROJ[Projection Matrices]
+        PROJ["P = K * [R|t]"]
         TRI[cv::triangulatePoints]
-        FILT[Filter Outliers]
+        FILT["Filter: depth, parallax, reproj"]
     end
 
     subgraph Output
         PC[Point Cloud]
         VIS[Visualization]
-        EXP[Export PLY]
+        EXP[Export PLY/PCD]
     end
 
     M1 --> TRI
@@ -380,18 +419,37 @@ flowchart LR
 
 ## Project Milestones
 
+### Phase 1: Core SLAM ✅
+
 | Milestone | Name | Description | Status |
 |-----------|------|-------------|--------|
-| H1 | Setup + Capture | CMake, OpenCV, video input | Done |
-| H2 | Feature Extraction | ORB detector, keypoints | Done |
-| H3 | Feature Matching | BFMatcher, ratio test | Done |
-| H4 | Pose Estimation | Essential matrix, trajectory | Done |
-| H5 | OpenCV CUDA | GpuMat, GPU ORB, smart pointers | Done |
-| H6 | TensorRT | YOLOv12s object detection | Done |
-| H7 | Aria Integration | Aria SDK, sensor capture | Pending |
-| H8 | Sensor Fusion | IMU preintegration, Kalman filter | Done |
-| H9 | Loop Closure | g2o pose graph optimization | Done |
-| H10 | 3D Mapping | Triangulation, point cloud, PLY export | Done |
+| H1 | Setup + Capture | CMake, OpenCV, video input | ✅ |
+| H2 | Feature Extraction | ORB detector, keypoints | ✅ |
+| H3 | Feature Matching | BFMatcher, ratio test | ✅ |
+| H4 | Pose Estimation | Essential matrix, trajectory | ✅ |
+| H5 | OpenCV CUDA | GpuMat, GPU ORB, GPU Matcher, smart pointers | ✅ |
+| H6 | TensorRT | YOLOv12s object detection | ✅ |
+| H7 | Aria Integration | Aria SDK, sensor capture | ⏳ Hardware |
+| H8 | Sensor Fusion | EKF 15-state, IMU + VO fusion | ✅ |
+| H9 | Loop Closure | g2o pose graph optimization | ✅ |
+| H10 | 3D Mapping | Triangulation, outlier filter, PLY/PCD export | ✅ |
+
+### Phase 2: Optimization ⏳
+
+| Milestone | Name | Description | Status |
+|-----------|------|-------------|--------|
+| H11 | CUDA Streams | ORB + YOLO parallel GPU, preprocessing on GPU | ⏳ |
+| H12 | Multithreading | std::thread, producer/consumer queues, sync | ⏳ |
+| H13 | Depth Estimation | DepthAnything/MiDaS TensorRT, dense mapping | ⏳ |
+| H14 | Configuration | YAML config, Pangolin 3D visualization | ⏳ |
+
+### Phase 3: Production ⏳
+
+| Milestone | Name | Description | Status |
+|-----------|------|-------------|--------|
+| H15 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | ⏳ |
+| H16 | Release | Docker container, README + GIF demo | ⏳ |
+| H17 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
 
 ### Visual Progress
 
@@ -401,7 +459,7 @@ gantt
     dateFormat X
     axisFormat %s
 
-    section Completed
+    section Phase 1 - Core
     H1 Setup           :done, h1, 0, 1
     H2 Features        :done, h2, 1, 2
     H3 Matching        :done, h3, 2, 3
@@ -409,13 +467,22 @@ gantt
     H5 CUDA            :done, h5, 4, 5
     H6 TensorRT        :done, h6, 5, 6
     H8 Fusion          :done, h8, 6, 7
-
     H9 Loop Closure    :done, h9, 7, 8
-
     H10 Mapping        :done, h10, 8, 9
 
-    section Pending
-    H7 Aria            :h7, 9, 10
+    section Phase 2 - Optimization
+    H11 CUDA Streams   :h11, 9, 10
+    H12 Multithreading :h12, 10, 11
+    H13 Depth          :h13, 11, 12
+    H14 Config         :h14, 12, 13
+
+    section Phase 3 - Production
+    H15 Architecture   :h15, 13, 14
+    H16 Release        :h16, 14, 15
+    H17 ROS2           :h17, 15, 16
+
+    section Hardware
+    H7 Aria            :h7, 16, 17
 ```
 
 ---
@@ -426,26 +493,42 @@ gantt
 aria-slam/
 ├── CMakeLists.txt
 ├── README.md
+├── config.yaml                # Configuration (H14)
+├── Dockerfile                 # Container (H16)
 ├── include/
-│   ├── Frame.hpp          # Frame with keypoints and descriptors
-│   ├── TRTInference.hpp   # TensorRT YOLO inference
-│   ├── IMU.hpp            # EKF sensor fusion (15-state)
-│   ├── LoopClosure.hpp    # Loop detection and pose graph
-│   ├── Mapper.hpp         # 3D point cloud mapping
-│   └── SyntheticIMU.hpp   # Synthetic IMU for testing
+│   ├── hardware/              # H15 refactor
+│   │   ├── Camera.hpp
+│   │   ├── IMUSensor.hpp
+│   │   └── EuRoCReader.hpp
+│   ├── perception/
+│   │   ├── ORBExtractor.hpp
+│   │   ├── FeatureMatcher.hpp
+│   │   ├── YOLODetector.hpp
+│   │   └── LoopDetector.hpp
+│   ├── fusion/
+│   │   ├── EKF.hpp
+│   │   └── PoseGraph.hpp
+│   ├── mapping/
+│   │   ├── Triangulator.hpp
+│   │   └── MapExporter.hpp
+│   └── pipeline/
+│       └── SlamPipeline.hpp
 ├── src/
-│   ├── main.cpp           # Main SLAM pipeline
-│   ├── Frame.cpp          # Frame implementation
-│   ├── TRTInference.cpp   # TensorRT implementation
-│   ├── IMU.cpp            # EKF implementation
-│   ├── LoopClosure.cpp    # g2o pose graph optimization
-│   └── Mapper.cpp         # Triangulation and PLY/PCD export
-├── experiments/
-│   └── benchmark_imu.cpp  # IMU fusion benchmark
+│   ├── main.cpp               # Main SLAM pipeline
+│   ├── euroc_eval.cpp         # EuRoC dataset evaluation
+│   └── ...                    # Implementations
+├── tests/                     # H15 testing
+│   ├── unit/
+│   │   ├── test_ekf.cpp
+│   │   ├── test_orb.cpp
+│   │   └── test_triangulation.cpp
+│   └── integration/
+│       └── test_pipeline.cpp
+├── datasets/
+│   └── MH_01_easy/            # EuRoC sequences
 ├── models/
-│   └── yolov12s.engine    # YOLOv12s TensorRT engine
-├── build/
-└── test.mp4
+│   └── yolov12s.engine        # YOLOv12s TensorRT engine
+└── build/
 ```
 
 ---
@@ -460,11 +543,13 @@ aria-slam/
 | GCC/Clang | C++17 | Compiler |
 | OpenCV | >= 4.6 + CUDA | Computer vision |
 | CUDA Toolkit | >= 12.0 | GPU computing |
-| TensorRT | >= 8.0 | Deep learning inference |
+| TensorRT | >= 10.0 | Deep learning inference |
 | Eigen | >= 3.3 | Linear algebra |
-| PCL | >= 1.12 | Point clouds |
-| DBoW2 | - | Loop closure |
 | g2o | - | Graph optimization |
+| yaml-cpp | - | Configuration (H14) |
+| Pangolin | - | 3D visualization (H14) |
+| GTest | - | Testing (H15) |
+| ROS2 Humble | - | Robot integration (H17) |
 
 ### Ubuntu Installation
 
@@ -480,8 +565,14 @@ sudo apt install nvidia-cuda-toolkit
 # Eigen
 sudo apt install libeigen3-dev
 
-# PCL
-sudo apt install libpcl-dev
+# g2o
+sudo apt install libg2o-dev
+
+# yaml-cpp
+sudo apt install libyaml-cpp-dev
+
+# GoogleTest
+sudo apt install libgtest-dev
 ```
 
 ### OpenCV with CUDA (Compilation)
@@ -569,6 +660,59 @@ make -j$(nproc)
 ./aria_slam
 ```
 
+### Run Tests (H15)
+
+```bash
+cd build
+ctest --output-on-failure
+# or
+./run_tests
+```
+
+### Evaluate on EuRoC Dataset
+
+Download [EuRoC MAV Dataset](https://projects.asl.ethz.ch/datasets/) and run:
+
+```bash
+# Download dataset
+cd datasets
+wget https://www.research-collection.ethz.ch/bitstreams/.../download -O machine_hall.zip
+unzip machine_hall.zip
+
+# Run evaluation
+./euroc_eval ../datasets/MH_01_easy
+```
+
+Output includes:
+- **ATE (Absolute Trajectory Error)**: RMSE of position error in meters
+- **RPE (Relative Pose Error)**: RMSE of relative motion error
+- Trajectory visualization (estimated vs ground truth)
+- Point cloud map (PLY format)
+
+### Docker (H16)
+
+```bash
+# Build
+docker build -t aria-slam .
+
+# Run
+docker run --gpus all -v /dev/video0:/dev/video0 aria-slam
+```
+
+### ROS2 (H17)
+
+```bash
+# Build
+cd ~/ros2_ws
+colcon build --packages-select aria_slam_ros
+
+# Run
+ros2 launch aria_slam_ros slam.launch.py
+
+# Visualize
+ros2 run rviz2 rviz2
+```
+
 ### SSH with X11
 
 ```bash
@@ -579,22 +723,35 @@ export LIBGL_ALWAYS_SOFTWARE=1
 
 ---
 
+## Performance
+
+| Metric | Value |
+|--------|-------|
+| FPS | 150+ (GPU pipeline) |
+| GPU Usage | ~200MB VRAM |
+| YOLO Inference | ~5ms |
+| ORB Extraction | ~10ms (GPU) |
+
+---
+
 ## References
 
 ### Papers
 - [ORB-SLAM2](https://arxiv.org/abs/1610.06475)
 - [VINS-Mono](https://arxiv.org/abs/1708.03852)
-- [DBoW2](https://github.com/dorian3d/DBoW2)
+- [g2o: A General Framework for Graph Optimization](http://ais.informatik.uni-freiburg.de/publications/papers/kuemmerle11icra.pdf)
 
 ### Documentation
 - [OpenCV CUDA](https://docs.opencv.org/4.x/d2/dbc/cuda_intro.html)
 - [TensorRT Developer Guide](https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/)
 - [Eigen Quick Reference](https://eigen.tuxfamily.org/dox/group__QuickRefPage.html)
-- [PCL Tutorials](https://pcl.readthedocs.io/)
+- [g2o Tutorial](https://github.com/RainerKuemmerle/g2o)
+- [ROS2 Humble](https://docs.ros.org/en/humble/)
 
 ### Resources
 - [Meta Aria Project](https://www.projectaria.com/)
 - [Multiple View Geometry Book](https://www.robots.ox.ac.uk/~vgg/hzbook/)
+- [EuRoC MAV Dataset](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets)
 
 ---
 

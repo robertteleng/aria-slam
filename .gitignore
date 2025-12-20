@@ -5,4 +5,6 @@ build/
 *.so
 CMakeCache.txt
 CMakeFiles/
+data/
+datasets/
 models/

@@ -43,6 +43,26 @@ target_link_libraries(aria_slam
     g2o_solver_eigen
 )
 
+# EuRoC dataset evaluation
+add_executable(euroc_eval
+    src/euroc_eval.cpp
+    src/EuRoCReader.cpp
+    src/Frame.cpp
+    src/IMU.cpp
+    src/LoopClosure.cpp
+    src/Mapper.cpp
+)
+
+target_link_libraries(euroc_eval
+    ${OpenCV_LIBS}
+    ${CUDA_LIBRARIES}
+    Eigen3::Eigen
+    g2o_core
+    g2o_stuff
+    g2o_types_slam3d
+    g2o_solver_eigen
+)
+
 # Experiments/benchmarks
 add_executable(benchmark_imu
     experiments/benchmark_imu.cpp
