@@ -794,6 +794,20 @@ export LIBGL_ALWAYS_SOFTWARE=1
 | YOLO Inference | ~5ms |
 | ORB Extraction | ~10ms (GPU) |
 
+### EuRoC Benchmark Results
+
+Evaluated on [EuRoC MAV Dataset](https://projects.asl.ethz.ch/datasets/) sequences:
+
+| Sequence | ATE (m) | RPE (m) | Loop Closures | Map Points |
+|----------|---------|---------|---------------|------------|
+| MH_01_easy | - | - | - | - |
+| MH_02_easy | - | - | - | - |
+| MH_03_medium | - | - | - | - |
+| V1_01_easy | - | - | - | - |
+| V2_01_easy | - | - | - | - |
+
+> Results pending full evaluation run.
+
 ---
 
 ## Glossary
