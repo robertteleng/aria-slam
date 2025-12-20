@@ -386,10 +386,10 @@ flowchart LR
 | H2 | Feature Extraction | ORB detector, keypoints | Done |
 | H3 | Feature Matching | BFMatcher, ratio test | Done |
 | H4 | Pose Estimation | Essential matrix, trajectory | Done |
-| H5 | OpenCV CUDA | GpuMat, GPU ORB | In Progress |
-| H6 | TensorRT | YOLO, depth inference | Pending |
+| H5 | OpenCV CUDA | GpuMat, GPU ORB, smart pointers | Done |
+| H6 | TensorRT | YOLOv12s object detection | Done |
 | H7 | Aria Integration | Aria SDK, sensor capture | Pending |
-| H8 | Sensor Fusion | IMU + VO, Kalman filter | Pending |
+| H8 | Sensor Fusion | IMU preintegration, Kalman filter | Done |
 | H9 | Loop Closure | DBoW2, pose graph | Pending |
 | H10 | 3D Mapping | Triangulation, point cloud | Pending |
 
@@ -406,14 +406,12 @@ gantt
     H2 Features        :done, h2, 1, 2
     H3 Matching        :done, h3, 2, 3
     H4 Pose            :done, h4, 3, 4
-
-    section In Progress
-    H5 CUDA            :active, h5, 4, 5
+    H5 CUDA            :done, h5, 4, 5
+    H6 TensorRT        :done, h6, 5, 6
+    H8 Fusion          :done, h8, 6, 7
 
     section Pending
-    H6 TensorRT        :h6, 5, 6
-    H7 Aria            :h7, 6, 7
-    H8 Fusion          :h8, 7, 8
+    H7 Aria            :h7, 7, 8
     H9 Loop Closure    :h9, 8, 9
     H10 Mapping        :h10, 9, 10
 ```
@@ -427,23 +425,18 @@ aria-slam/
 ├── CMakeLists.txt
 ├── README.md
 ├── include/
-│   ├── Frame.hpp
-│   ├── VisualOdometry.hpp
-│   ├── SensorFusion.hpp
-│   ├── LoopClosure.hpp
-│   └── Mapper.hpp
+│   ├── Frame.hpp          # Frame with keypoints and descriptors
+│   ├── TRTInference.hpp   # TensorRT YOLO inference
+│   ├── IMU.hpp            # IMU preintegration and sensor fusion
+│   └── SyntheticIMU.hpp   # Synthetic IMU for testing
 ├── src/
-│   ├── main.cpp
-│   ├── Frame.cpp
-│   ├── VisualOdometry.cpp
-│   ├── SensorFusion.cpp
-│   ├── LoopClosure.cpp
-│   └── Mapper.cpp
+│   ├── main.cpp           # Main SLAM pipeline
+│   ├── Frame.cpp          # Frame implementation
+│   ├── TRTInference.cpp   # TensorRT implementation
+│   ├── IMU.cpp            # Sensor fusion implementation
+│   └── test_imu.cpp       # IMU fusion test
 ├── models/
-│   ├── yolo.engine
-│   └── depth.engine
-├── vocab/
-│   └── orb_vocab.txt
+│   └── yolov12s.engine    # YOLOv12s TensorRT engine
 ├── build/
 └── test.mp4
 ```
@@ -527,16 +520,19 @@ export OpenCV_DIR=~/libs/opencv_cuda
 ### TensorRT (Installation)
 
 ```bash
-# Download from NVIDIA (requires account)
-# https://developer.nvidia.com/tensorrt
+# Download TensorRT 10.x from NVIDIA (requires account)
+# https://developer.nvidia.com/tensorrt/download
 
 # Extract
 cd ~/libs
-tar -xzf TensorRT-8.6.1.6.Linux.x86_64-gnu.cuda-12.0.tar.gz
+tar -xzf TensorRT-10.7.0.23.Linux.x86_64-gnu.cuda-12.6.tar.gz
 
 # Add to ~/.zshrc or ~/.bashrc
-export LD_LIBRARY_PATH=~/libs/TensorRT-8.6.1.6/lib:$LD_LIBRARY_PATH
-export PATH=~/libs/TensorRT-8.6.1.6/bin:$PATH
+export LD_LIBRARY_PATH=~/libs/TensorRT-10.7.0.23/lib:$LD_LIBRARY_PATH
+export PATH=~/libs/TensorRT-10.7.0.23/bin:$PATH
+
+# Convert YOLO model to TensorRT engine
+trtexec --onnx=models/yolov12s.onnx --saveEngine=models/yolov12s.engine --fp16
 ```
 
 ### Verify Installation
