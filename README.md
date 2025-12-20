@@ -471,9 +471,10 @@ aria-slam/
 ```bash
 # Básicos
 sudo apt update
-sudo apt install cmake g++ libopencv-dev
+sudo apt install cmake g++ gcc-12 g++-12 libopencv-dev
 
-# CUDA
+# CUDA Toolkit (usar /home como tmp si / está lleno)
+export TMPDIR=/home/$USER/tmp && mkdir -p $TMPDIR
 sudo apt install nvidia-cuda-toolkit
 
 # Eigen
@@ -481,9 +482,61 @@ sudo apt install libeigen3-dev
 
 # PCL
 sudo apt install libpcl-dev
+```
 
-# TensorRT (desde NVIDIA)
+### OpenCV con CUDA (Compilación)
+
+OpenCV de apt no incluye soporte CUDA. Hay que compilarlo:
+
+```bash
+# Clonar OpenCV 4.9.0
+cd ~/libs
+git clone --depth 1 --branch 4.9.0 https://github.com/opencv/opencv.git
+git clone --depth 1 --branch 4.9.0 https://github.com/opencv/opencv_contrib.git
+
+# Configurar (usar GCC-12 para compatibilidad con CUDA)
+mkdir -p opencv/build && cd opencv/build
+cmake .. \
+    -DCMAKE_C_COMPILER=/usr/bin/gcc-12 \
+    -DCMAKE_CXX_COMPILER=/usr/bin/g++-12 \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=~/libs/opencv_cuda \
+    -DWITH_CUDA=ON \
+    -DWITH_CUDNN=OFF \
+    -DENABLE_FAST_MATH=ON \
+    -DCUDA_FAST_MATH=ON \
+    -DWITH_CUBLAS=ON \
+    -DCUDA_ARCH_BIN=7.5 \
+    -DOPENCV_EXTRA_MODULES_PATH=~/libs/opencv_contrib/modules \
+    -DBUILD_EXAMPLES=OFF \
+    -DBUILD_TESTS=OFF
+
+# Compilar e instalar (~20-30 min)
+make -j8 && make install
+
+# Añadir a ~/.zshrc o ~/.bashrc
+export OpenCV_DIR=~/libs/opencv_cuda
+```
+
+> **Nota:** Cambiar `CUDA_ARCH_BIN=7.5` según tu GPU:
+> - RTX 2060/2070/2080: 7.5
+> - RTX 3060/3070/3080: 8.6
+> - RTX 4060/4070/4080: 8.9
+> - RTX 5070/5080/5090: 10.0
+
+### TensorRT (Instalación)
+
+```bash
+# Descargar desde NVIDIA (requiere cuenta)
 # https://developer.nvidia.com/tensorrt
+
+# Extraer
+cd ~/libs
+tar -xzf TensorRT-8.6.1.6.Linux.x86_64-gnu.cuda-12.0.tar.gz
+
+# Añadir a ~/.zshrc o ~/.bashrc
+export LD_LIBRARY_PATH=~/libs/TensorRT-8.6.1.6/lib:$LD_LIBRARY_PATH
+export PATH=~/libs/TensorRT-8.6.1.6/bin:$PATH
 ```
 
 ### Verificar Instalación
