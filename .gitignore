@@ -5,5 +5,3 @@ build/
 *.so
 CMakeCache.txt
 CMakeFiles/
-# Doxygen
-docs/
