@@ -9,5 +9,5 @@ public:
     cv::Mat descriptors;
     
     Frame(const cv::Mat& img, cv::Ptr<cv::ORB> orb);
-
+    Frame(const Frame& other);  // Copy constructor
 };
