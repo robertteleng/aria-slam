@@ -5,3 +5,4 @@ build/
 *.so
 CMakeCache.txt
 CMakeFiles/
+models/
