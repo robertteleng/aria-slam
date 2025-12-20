@@ -11,9 +11,11 @@ int main() {
         std::cerr << "Error: Could not open camera." << std::endl;
         return -1;
     }
-
+    // ORB detector
     cv::Ptr<cv::ORB> orb = cv::ORB::create();
+    // Previous frame pointer
     Frame* prev_frame = nullptr;
+    // BFMatcher for ORB
     cv::BFMatcher matcher(cv::NORM_HAMMING);
 
     while (true) {
@@ -43,14 +45,15 @@ int main() {
         }
 
         // Draw visualization
+        // IMPORTANT: Always use current_frame.image (where keypoints were detected)
+        // Using 'frame' instead causes black screen - keypoint coords don't match
         cv::Mat display;
         if (prev_frame != nullptr && !good_matches.empty()) {
-            // Draw matches side by side
             cv::drawMatches(prev_frame->image, prev_frame->keypoints,
                            current_frame.image, current_frame.keypoints,
                            good_matches, display);
+            cv::drawMatches(prev_frame->)
         } else {
-            // Just draw keypoints on current frame
             cv::drawKeypoints(current_frame.image, current_frame.keypoints,
                              display, cv::Scalar(0, 255, 0));
         }
