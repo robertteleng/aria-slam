@@ -1,5 +1,6 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
+#include <chrono>
 
 int main() {
     std::cout << "Aria SLAM" << std::endl;
@@ -15,6 +16,8 @@ int main() {
 
     while (true)
     {
+        auto t1 = std::chrono::high_resolution_clock::now(); // Start time measurement
+
         cv::Mat frame; // Create a matrix to hold the frame
 
         cap >> frame; // Capture a frame from the webcam
@@ -22,6 +25,12 @@ int main() {
             std::cerr << "Error: Could not capture frame." << std::endl;
             break;
         }
+        auto t2 = std::chrono::high_resolution_clock::now(); // End time measurement
+        double ms = std::chrono::duration<double, std::milli>(t2 - t1).count(); // Calculate elapsed time in milliseconds
+        double fps = 1000.0 / ms;  // Calculate frames per second
+        std::string fps_text = "FPS: " + std::to_string((int)fps); // Prepare FPS text
+        cv::putText(frame, fps_text, cv::Point(10,30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0,255,0), 2); // Overlay FPS on the frame
+
         cv::namedWindow("Webcam Frame", cv::WINDOW_NORMAL); // Create a window to display the frame
         cv::imshow("Webcam Frame", frame); // Display the frame in a window
         if (cv::waitKey(1) == 'q') break; // Exit loop if 'q' is pressed
