@@ -18,9 +18,26 @@
 #include <opencv2/cudafeatures2d.hpp>
 #include <chrono>
 #include "Frame.hpp"
+#include "TRTInference.hpp"
+
+// COCO class names for visualization
+const std::vector<std::string> COCO_CLASSES = {
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
+    "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
+    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
+    "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
+    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
+    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
+    "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
+    "toothbrush"
+};
 
 int main() {
-    std::cout << "Aria SLAM (CUDA)" << std::endl;
+    std::cout << "Aria SLAM (CUDA + TensorRT)" << std::endl;
 
     // Verify CUDA is available
     int cuda_devices = cv::cuda::getCudaEnabledDeviceCount();
@@ -41,6 +58,14 @@ int main() {
 
     // Feature matching (GPU accelerated)
     cv::Ptr<cv::cuda::DescriptorMatcher> matcher = cv::cuda::DescriptorMatcher::createBFMatcher(cv::NORM_HAMMING);
+
+    // YOLO object detection (TensorRT)
+    std::unique_ptr<TRTInference> yolo;
+    try {
+        yolo = std::make_unique<TRTInference>("../models/yolov12s.engine");
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: YOLO disabled - " << e.what() << std::endl;
+    }
 
     // Frame history for temporal matching
     std::unique_ptr<Frame> prev_frame;
@@ -112,6 +137,12 @@ int main() {
         cv::namedWindow("Trajectory", cv::WINDOW_NORMAL);
         cv::imshow("Trajectory", trajectory);
 
+        // YOLO object detection
+        std::vector<Detection> detections;
+        if (yolo) {
+            detections = yolo->detect(frame, 0.5f, 0.45f);
+        }
+
         // Visualization: draw matches or keypoints
         cv::Mat display;
         if (prev_frame && !good_matches.empty()) {
@@ -121,6 +152,15 @@ int main() {
         } else {
             cv::drawKeypoints(current_frame.image, current_frame.keypoints,
                              display, cv::Scalar(0, 255, 0));
+        }
+
+        // Draw YOLO detections
+        for (const auto& det : detections) {
+            cv::rectangle(display, det.box, cv::Scalar(0, 0, 255), 2);
+            std::string label = COCO_CLASSES[det.class_id] + " " +
+                               std::to_string((int)(det.confidence * 100)) + "%";
+            cv::putText(display, label, cv::Point(det.box.x, det.box.y - 5),
+                       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
         }
 
         // Store current frame for next iteration
@@ -133,6 +173,8 @@ int main() {
                     cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
         cv::putText(display, "Matches: " + std::to_string(good_matches.size()),
                     cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
+        cv::putText(display, "Objects: " + std::to_string(detections.size()),
+                    cv::Point(10, 90), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 255), 2);
 
         cv::namedWindow("Aria SLAM", cv::WINDOW_NORMAL);
         cv::imshow("Aria SLAM", display);
