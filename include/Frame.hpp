@@ -12,7 +12,8 @@ class Frame {
 public:
     cv::Mat image;                        ///< Original BGR image
     std::vector<cv::KeyPoint> keypoints;  ///< Detected ORB keypoints
-    cv::Mat descriptors;                  ///< ORB descriptors (binary, 32 bytes each)
+    cv::Mat descriptors;                  ///< ORB descriptors on CPU
+    cv::cuda::GpuMat gpu_descriptors;     ///< ORB descriptors on GPU (for matching)
 
     /**
      * @brief Construct frame with GPU-accelerated ORB detection

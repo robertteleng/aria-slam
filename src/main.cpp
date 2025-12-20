@@ -13,6 +13,7 @@
  */
 
 #include <iostream>
+#include <memory>
 #include <opencv2/opencv.hpp>
 #include <opencv2/cudafeatures2d.hpp>
 #include <chrono>
@@ -38,11 +39,11 @@ int main() {
     // Feature detection (GPU accelerated)
     cv::Ptr<cv::cuda::ORB> orb = cv::cuda::ORB::create();
 
-    // Feature matching (CPU - TODO: move to GPU)
-    cv::BFMatcher matcher(cv::NORM_HAMMING);
+    // Feature matching (GPU accelerated)
+    cv::Ptr<cv::cuda::DescriptorMatcher> matcher = cv::cuda::DescriptorMatcher::createBFMatcher(cv::NORM_HAMMING);
 
     // Frame history for temporal matching
-    Frame* prev_frame = nullptr;
+    std::unique_ptr<Frame> prev_frame;
 
     // Intrinsic camera matrix (approximate values for test video)
     double fx = 700, fy = 700;
@@ -67,14 +68,14 @@ int main() {
         // Extract ORB features on GPU
         Frame current_frame(frame, orb);
 
-        // Match current frame with previous frame using Lowe's ratio test
+        // Match current frame with previous frame using Lowe's ratio test (GPU)
         std::vector<cv::DMatch> good_matches;
-        if (prev_frame != nullptr &&
-            !prev_frame->descriptors.empty() &&
-            !current_frame.descriptors.empty()) {
+        if (prev_frame &&
+            !prev_frame->gpu_descriptors.empty() &&
+            !current_frame.gpu_descriptors.empty()) {
 
             std::vector<std::vector<cv::DMatch>> knn_matches;
-            matcher.knnMatch(prev_frame->descriptors, current_frame.descriptors, knn_matches, 2);
+            matcher->knnMatch(prev_frame->gpu_descriptors, current_frame.gpu_descriptors, knn_matches, 2);
 
             for (auto& knn : knn_matches) {
                 if (knn.size() >= 2 && knn[0].distance < 0.75 * knn[1].distance) {
@@ -113,7 +114,7 @@ int main() {
 
         // Visualization: draw matches or keypoints
         cv::Mat display;
-        if (prev_frame != nullptr && !good_matches.empty()) {
+        if (prev_frame && !good_matches.empty()) {
             cv::drawMatches(prev_frame->image, prev_frame->keypoints,
                            current_frame.image, current_frame.keypoints,
                            good_matches, display);
@@ -122,9 +123,8 @@ int main() {
                              display, cv::Scalar(0, 255, 0));
         }
 
-        // Store current frame for next iteration (TODO: use smart pointers)
-        if (prev_frame != nullptr) delete prev_frame;
-        prev_frame = new Frame(current_frame);
+        // Store current frame for next iteration
+        prev_frame = std::make_unique<Frame>(current_frame);
 
         // Calculate and display FPS
         auto t2 = std::chrono::high_resolution_clock::now();
@@ -137,11 +137,10 @@ int main() {
         cv::namedWindow("Aria SLAM", cv::WINDOW_NORMAL);
         cv::imshow("Aria SLAM", display);
 
-        // Process window events (TODO: reduce to waitKey(1) for max FPS)
-        char key = cv::waitKey(30);
+        // Process window events
+        char key = cv::waitKey(1);
         if (key == 'q') break;
     }
 
-    delete prev_frame;
     return 0;
 }

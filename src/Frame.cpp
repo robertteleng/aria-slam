@@ -17,11 +17,11 @@ Frame::Frame(const cv::Mat& img, cv::Ptr<cv::cuda::ORB> orb_gpu) {
     cv::cuda::GpuMat gpu_keypoints, gpu_descriptors;
 
     // Async detection on GPU (non-blocking)
-    orb_gpu->detectAndComputeAsync(gpu_img, cv::cuda::GpuMat(), gpu_keypoints, gpu_descriptors);
+    orb_gpu->detectAndComputeAsync(gpu_img, cv::cuda::GpuMat(), gpu_keypoints, this->gpu_descriptors);
 
-    // GPU -> CPU transfer
+    // GPU -> CPU transfer (keypoints needed for visualization)
     orb_gpu->convert(gpu_keypoints, keypoints);
-    gpu_descriptors.download(descriptors);
+    this->gpu_descriptors.download(descriptors);
 }
 
 // CPU ORB: fallback for systems without CUDA
@@ -35,4 +35,5 @@ Frame::Frame(const Frame& other) {
     image = other.image.clone();
     keypoints = other.keypoints;
     descriptors = other.descriptors.clone();
+    other.gpu_descriptors.copyTo(gpu_descriptors);
 }
