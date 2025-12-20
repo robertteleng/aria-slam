@@ -1,13 +1,13 @@
-# Aria SLAM - Visual Odometry
+# Aria SLAM - Visual SLAM System
 
-Sistema de Visual Odometry en C++ para Meta Aria glasses.
+Sistema completo de SLAM (Simultaneous Localization and Mapping) en C++ para Meta Aria glasses.
 
 ---
 
 ## Índice
 
 1. [Introducción](#introducción)
-2. [Visual Odometry Explicado](#visual-odometry-explicado)
+2. [Visual SLAM Explicado](#visual-slam-explicado)
 3. [Arquitectura del Sistema](#arquitectura-del-sistema)
 4. [Pipeline de Procesamiento](#pipeline-de-procesamiento)
 5. [Hitos del Proyecto](#hitos-del-proyecto)
@@ -22,137 +22,116 @@ Sistema de Visual Odometry en C++ para Meta Aria glasses.
 
 ### ¿Qué es este proyecto?
 
-Aria SLAM es una implementación desde cero de Visual Odometry en C++. El sistema procesa un stream de video y calcula en tiempo real cómo se mueve la cámara en el espacio 3D, generando una trayectoria.
+Aria SLAM es una implementación desde cero de un sistema SLAM completo en C++. El sistema procesa streams de video y sensores IMU para:
+
+- Calcular la posición y orientación de la cámara en tiempo real
+- Construir un mapa 3D del entorno
+- Detectar cuando vuelves a un lugar visitado (loop closure)
+- Ejecutar modelos de deep learning para detección y depth estimation
 
 ### ¿Para qué sirve?
 
-Imagina que tienes unas gafas inteligentes (como Meta Aria) y quieres saber dónde estás sin GPS. Visual Odometry analiza lo que ve la cámara y deduce tu movimiento. Es la base de la navegación autónoma en drones, robots y dispositivos AR/VR.
+Navegación autónoma sin GPS. Drones, robots, dispositivos AR/VR necesitan saber dónde están usando solo sus sensores. SLAM analiza lo que ve la cámara y los datos del IMU para deducir posición y construir mapas.
 
-### ¿Por qué C++?
+### ¿Por qué C++ con CUDA/TensorRT?
 
-Los sistemas de visión por computador en tiempo real requieren rendimiento. C++ permite control directo de memoria y optimizaciones que lenguajes como Python no ofrecen. Este proyecto demuestra competencia en C++ para sistemas embebidos y aerospace.
+Los sistemas de navegación en tiempo real requieren máximo rendimiento. Este proyecto demuestra competencia en:
+
+- C++ para sistemas embebidos
+- CUDA para procesamiento GPU
+- TensorRT para inference de deep learning
+- Sensor fusion para robustez
+- Arquitecturas SLAM de producción
 
 ---
 
-## Visual Odometry Explicado
+## Visual SLAM Explicado
 
 ### El Problema
 
-Dada una secuencia de imágenes de una cámara en movimiento, queremos calcular la posición y orientación de la cámara en cada instante.
+Dada una secuencia de imágenes y datos IMU, queremos:
+1. Calcular la posición de la cámara en cada instante
+2. Construir un mapa 3D del entorno
+3. Corregir errores acumulados (drift)
 
 ```mermaid
 flowchart LR
     subgraph Input
-        F1[Frame 1]
-        F2[Frame 2]
-        F3[Frame 3]
-        FN[Frame N]
+        C[Camera]
+        I[IMU]
     end
     
     subgraph Output
-        P1["Pos (0,0,0)"]
-        P2["Pos (0.1, 0, 0.2)"]
-        P3["Pos (0.3, 0, 0.5)"]
-        PN["Pos (x, y, z)"]
+        T[Trajectory]
+        M[3D Map]
     end
     
-    F1 --> P1
-    F2 --> P2
-    F3 --> P3
-    FN --> PN
+    C --> SLAM
+    I --> SLAM
+    SLAM --> T
+    SLAM --> M
 ```
 
-### La Solución (4 pasos)
+### La Solución (Pipeline Completo)
 
 ```mermaid
 flowchart TD
-    subgraph Paso1["1️⃣ Detectar Features"]
-        A[Frame] --> B[ORB Detector]
-        B --> C[Keypoints + Descriptors]
+    subgraph Sensores["📹 Sensores"]
+        CAM[Camera 30Hz]
+        IMU[IMU 1000Hz]
     end
     
-    subgraph Paso2["2️⃣ Match Features"]
-        C --> D[BFMatcher]
-        D --> E[Correspondencias]
+    subgraph Frontend["⚡ Frontend"]
+        FE[Feature Extraction]
+        FM[Feature Matching]
+        PE[Pose Estimation]
     end
     
-    subgraph Paso3["3️⃣ Calcular Movimiento"]
-        E --> F[Essential Matrix]
-        F --> G[Recover Pose]
-        G --> H["R (rotación) + t (traslación)"]
+    subgraph Backend["🧠 Backend"]
+        SF[Sensor Fusion]
+        LC[Loop Closure]
+        OPT[Optimization]
     end
     
-    subgraph Paso4["4️⃣ Acumular Posición"]
-        H --> I[Integrar movimiento]
-        I --> J[Trayectoria 3D]
-    end
-```
-
-### Paso 1: Detectar Features
-
-Un "feature" es un punto distintivo en la imagen - esquinas, bordes, patrones únicos. ORB (Oriented FAST and Rotated BRIEF) detecta estos puntos y genera un "descriptor" (huella digital) para cada uno.
-
-```mermaid
-flowchart LR
-    A["🖼️ Imagen"] --> B["🔍 ORB"]
-    B --> C["📍 Keypoints\n(coordenadas x,y)"]
-    B --> D["🔢 Descriptors\n(256 bits c/u)"]
-```
-
-**¿Por qué es útil?** Los features son puntos que podemos reconocer en el siguiente frame, aunque la cámara se haya movido.
-
-### Paso 2: Match Features
-
-Comparamos los descriptores del frame anterior con el actual. Si dos descriptores son similares, es el mismo punto del mundo real visto desde diferente posición.
-
-```mermaid
-flowchart LR
-    subgraph Frame1["Frame N-1"]
-        A1["● P1"]
-        A2["● P2"]
-        A3["● P3"]
+    subgraph Output["📊 Output"]
+        TRAJ[Trajectory]
+        MAP[3D Map]
     end
     
-    subgraph Frame2["Frame N"]
-        B1["● P1'"]
-        B2["● P2'"]
-        B3["● P3'"]
-    end
-    
-    A1 -.->|match| B1
-    A2 -.->|match| B2
-    A3 -.->|match| B3
+    CAM --> FE --> FM --> PE
+    IMU --> SF
+    PE --> SF
+    SF --> LC
+    LC --> OPT
+    OPT --> TRAJ
+    OPT --> MAP
 ```
 
-**Ratio Test:** Para evitar falsos positivos, comparamos las 2 mejores coincidencias. Si la mejor es mucho mejor que la segunda, es un buen match.
+### Componentes Clave
 
-### Paso 3: Calcular Movimiento
+**1. Feature Extraction (ORB)**
+- Detecta puntos distintivos en la imagen
+- Genera descriptores (huella digital) por punto
 
-Con las correspondencias, aplicamos geometría epipolar:
+**2. Feature Matching**
+- Encuentra correspondencias entre frames
+- Ratio test filtra falsos positivos
 
-1. **Essential Matrix (E):** Codifica la relación geométrica entre los 2 frames
-2. **Decompose:** Extraemos rotación (R) y traslación (t) de E
+**3. Pose Estimation**
+- Essential Matrix relaciona 2 vistas
+- Recover Pose extrae rotación y traslación
 
-```mermaid
-flowchart LR
-    A["Matches\n(p1↔p2)"] --> B["Essential\nMatrix E"]
-    B --> C["Decompose"]
-    C --> D["R (3x3)\nRotación"]
-    C --> E["t (3x1)\nTraslación"]
-```
+**4. Sensor Fusion (Kalman Filter)**
+- IMU predice pose a 1000 Hz
+- VO corrige drift a 30 Hz
 
-**Intuición:** Si ves los mismos puntos desde 2 posiciones diferentes, la geometría te dice cómo te moviste.
+**5. Loop Closure (DBoW2)**
+- Detecta lugares revisitados
+- Bag of Words compara frames
 
-### Paso 4: Acumular Posición
-
-Cada frame nos da un movimiento relativo (R, t). Para obtener la posición global, integramos:
-
-```
-posición_nueva = posición_actual + rotación_actual × traslación
-rotación_nueva = R × rotación_actual
-```
-
-Esto construye la trayectoria completa de la cámara.
+**6. Mapping (Triangulación)**
+- Convierte matches 2D a puntos 3D
+- Genera nube de puntos del entorno
 
 ---
 
@@ -162,28 +141,52 @@ Esto construye la trayectoria completa de la cámara.
 
 ```mermaid
 flowchart TD
-    subgraph Input["📹 Input"]
-        V[Video/Camera]
-        A[Aria Glasses]
+    subgraph Hardware["🔧 Hardware"]
+        ARIA[Aria Glasses]
+        GPU[RTX 2060]
     end
     
-    subgraph Core["⚙️ Core Pipeline"]
-        F[Frame Class]
-        M[Matcher]
+    subgraph Capture["📹 Capture"]
+        RGB[RGB Camera]
+        SLAM_CAM[SLAM Cameras x2]
+        IMU_S[IMU Sensor]
+    end
+    
+    subgraph Processing["⚙️ Processing"]
+        CUDA[OpenCV CUDA]
+        TRT[TensorRT]
+        CPU[CPU Pipeline]
+    end
+    
+    subgraph SLAM["🗺️ SLAM"]
         VO[Visual Odometry]
+        FUSION[Sensor Fusion]
+        LOOP[Loop Closure]
+        MAPPING[3D Mapping]
     end
     
     subgraph Output["📊 Output"]
-        T[Trajectory]
-        VIS[Visualization]
+        TRAJ[Trajectory]
+        MAP[Point Cloud]
+        DET[Detections]
     end
     
-    V --> F
-    A --> F
-    F --> M
-    M --> VO
-    VO --> T
-    T --> VIS
+    ARIA --> RGB
+    ARIA --> SLAM_CAM
+    ARIA --> IMU_S
+    
+    RGB --> CUDA
+    CUDA --> VO
+    IMU_S --> FUSION
+    VO --> FUSION
+    FUSION --> LOOP
+    LOOP --> MAPPING
+    
+    CUDA --> TRT
+    TRT --> DET
+    
+    MAPPING --> MAP
+    FUSION --> TRAJ
 ```
 
 ### Diagrama de Clases
@@ -195,48 +198,68 @@ classDiagram
         +vector~KeyPoint~ keypoints
         +Mat descriptors
         +Frame(Mat img, ORB orb)
-        +Frame(Frame other)
     }
     
     class VisualOdometry {
-        +Mat K : camera matrix
-        +Mat position : 3x1
-        +Mat rotation : 3x3
-        +processFrame(Frame current)
-        +getTrajectory() Mat
+        +Mat K
+        +Mat position
+        +Mat rotation
+        +processFrame(Frame)
+        +getTrajectory()
     }
     
-    class Matcher {
-        +BFMatcher matcher
-        +vector~DMatch~ match(Frame prev, Frame curr)
-        -ratioTest(matches) vector~DMatch~
+    class SensorFusion {
+        +VectorXd state
+        +MatrixXd covariance
+        +predict(IMUData)
+        +update(VOData)
     }
     
-    Frame --> VisualOdometry : provides features
-    Matcher --> VisualOdometry : provides matches
+    class LoopClosure {
+        +OrbDatabase db
+        +detect(Frame)
+        +optimize()
+    }
+    
+    class Mapper {
+        +PointCloud cloud
+        +triangulate(Frame, Frame)
+        +getMap()
+    }
+    
+    Frame --> VisualOdometry
+    VisualOdometry --> SensorFusion
+    SensorFusion --> LoopClosure
+    LoopClosure --> Mapper
 ```
 
 ### Flujo de Datos
 
 ```mermaid
 sequenceDiagram
-    participant V as Video
-    participant F as Frame
-    participant M as Matcher
+    participant C as Camera
+    participant I as IMU
     participant VO as VisualOdometry
-    participant T as Trajectory
+    participant SF as SensorFusion
+    participant LC as LoopClosure
+    participant M as Mapper
     
-    loop Each Frame
-        V->>F: capture()
-        F->>F: detectFeatures(ORB)
-        F->>M: current_frame
-        M->>M: knnMatch()
-        M->>M: ratioTest()
-        M->>VO: good_matches
-        VO->>VO: findEssentialMat()
-        VO->>VO: recoverPose()
-        VO->>VO: updatePosition()
-        VO->>T: position
+    loop 1000 Hz
+        I->>SF: accel, gyro
+        SF->>SF: predict()
+    end
+    
+    loop 30 Hz
+        C->>VO: frame
+        VO->>VO: extract features
+        VO->>VO: match
+        VO->>VO: estimate pose
+        VO->>SF: R, t
+        SF->>SF: update()
+        SF->>LC: fused pose
+        LC->>LC: check loop
+        LC->>M: optimized pose
+        M->>M: triangulate
     end
 ```
 
@@ -244,60 +267,113 @@ sequenceDiagram
 
 ## Pipeline de Procesamiento
 
-### Vista Completa
+### Pipeline GPU (H5-H6)
 
 ```mermaid
-flowchart TB
-    subgraph H1["H1: Captura"]
-        A1[VideoCapture] --> A2[Read Frame]
-        A2 --> A3[Check Valid]
+flowchart LR
+    subgraph CPU
+        CAP[Capture]
+        OUT[Output]
     end
     
-    subgraph H2["H2: Features"]
-        B1[Convert Gray] --> B2[ORB Detect]
-        B2 --> B3[Compute Descriptors]
+    subgraph GPU
+        UP[Upload]
+        ORB[ORB CUDA]
+        YOLO[YOLO TensorRT]
+        DEPTH[Depth TensorRT]
+        DOWN[Download]
     end
     
-    subgraph H3["H3: Matching"]
-        C1[KNN Match k=2] --> C2[Ratio Test 0.75]
-        C2 --> C3[Filter Good Matches]
-    end
-    
-    subgraph H4["H4: Pose"]
-        D1[Extract Points] --> D2[Essential Matrix]
-        D2 --> D3[Recover Pose]
-        D3 --> D4[Update Position]
-    end
-    
-    subgraph H5["H5: Output"]
-        E1[Draw Trajectory] --> E2[Display]
-    end
-    
-    H1 --> H2 --> H3 --> H4 --> H5
+    CAP --> UP
+    UP --> ORB --> DOWN
+    UP --> YOLO --> DOWN
+    UP --> DEPTH --> DOWN
+    DOWN --> OUT
 ```
 
-### Matemáticas Clave
+### Pipeline Sensor Fusion (H8)
 
 ```mermaid
 flowchart TD
-    subgraph EssentialMatrix["Essential Matrix"]
-        E1["p2ᵀ · E · p1 = 0"]
-        E2["E = t× · R"]
-        E3["t× = skew-symmetric matrix"]
+    subgraph IMU["IMU 1000Hz"]
+        ACC[Accelerometer]
+        GYRO[Gyroscope]
     end
     
-    subgraph RecoverPose["Recover Pose"]
-        R1["SVD: E = U·Σ·Vᵀ"]
-        R2["R = U·W·Vᵀ"]
-        R3["t = ±U₃"]
+    subgraph Predict
+        A["state = A·state + B·accel"]
+        B["P = A·P·Aᵀ + Q"]
     end
     
-    subgraph Accumulate["Accumulate"]
-        A1["pos += R_global · t"]
-        A2["R_global = R · R_global"]
+    subgraph VO["VO 30Hz"]
+        POSE[Pose R,t]
     end
     
-    EssentialMatrix --> RecoverPose --> Accumulate
+    subgraph Update
+        C["K = P·Hᵀ·(H·P·Hᵀ + R)⁻¹"]
+        D["state = state + K·(z - H·state)"]
+    end
+    
+    ACC --> Predict
+    GYRO --> Predict
+    Predict --> Update
+    POSE --> Update
+    Update --> OUTPUT[Fused Pose]
+```
+
+### Pipeline Loop Closure (H9)
+
+```mermaid
+flowchart TD
+    subgraph Detection
+        F[Frame] --> BOW[Bag of Words]
+        BOW --> DB[(Database)]
+        DB --> QUERY[Query Similar]
+        QUERY --> CAND[Candidates]
+    end
+    
+    subgraph Verification
+        CAND --> GEOM[Geometric Check]
+        GEOM --> VALID{Valid?}
+    end
+    
+    subgraph Optimization
+        VALID -->|Yes| GRAPH[Pose Graph]
+        GRAPH --> OPT[Optimize]
+        OPT --> CORRECT[Corrected Trajectory]
+    end
+    
+    VALID -->|No| REJECT[Reject]
+```
+
+### Pipeline Mapping (H10)
+
+```mermaid
+flowchart LR
+    subgraph Input
+        M1[Matches]
+        P1[Pose 1]
+        P2[Pose 2]
+    end
+    
+    subgraph Triangulation
+        PROJ[Projection Matrices]
+        TRI[cv::triangulatePoints]
+        FILT[Filter Outliers]
+    end
+    
+    subgraph Output
+        PC[Point Cloud]
+        VIS[Visualization]
+        EXP[Export PLY]
+    end
+    
+    M1 --> TRI
+    P1 --> PROJ --> TRI
+    P2 --> PROJ
+    TRI --> FILT --> PC
+    PC --> VIS
+    PC --> EXP
 ```
 
 ---
@@ -306,30 +382,40 @@ flowchart TD
 
 | Hito | Nombre | Descripción | Estado |
 |------|--------|-------------|--------|
-| H1 | Setup + Captura | CMake, OpenCV, video input, FPS display | ✅ |
-| H2 | Feature Extraction | ORB detector, keypoints, descriptors | ✅ |
-| H3 | Feature Matching | BFMatcher, KNN, ratio test, visualization | ✅ |
-| H4 | Pose Estimation | Essential matrix, recover pose, trajectory | 🔄 |
-| H5 | Aria Integration | Meta Aria SDK, sensor fusion, demo | ⏳ |
+| H1 | Setup + Captura | CMake, OpenCV, video input | ✅ |
+| H2 | Feature Extraction | ORB detector, keypoints | ✅ |
+| H3 | Feature Matching | BFMatcher, ratio test | ✅ |
+| H4 | Pose Estimation | Essential matrix, trajectory | ✅ |
+| H5 | OpenCV CUDA | GpuMat, ORB GPU | 🔄 |
+| H6 | TensorRT | YOLO, depth inference | ⏳ |
+| H7 | Aria Integration | Aria SDK, sensor capture | ⏳ |
+| H8 | Sensor Fusion | IMU + VO, Kalman filter | ⏳ |
+| H9 | Loop Closure | DBoW2, pose graph | ⏳ |
+| H10 | Mapping 3D | Triangulation, point cloud | ⏳ |
 
 ### Progreso Visual
 
 ```mermaid
 gantt
-    title Progreso del Proyecto
-    dateFormat  X
+    title Progreso SLAM
+    dateFormat X
     axisFormat %s
     
     section Completado
-    H1 Setup + Captura    :done, h1, 0, 1
-    H2 Feature Extraction :done, h2, 1, 2
-    H3 Feature Matching   :done, h3, 2, 3
+    H1 Setup           :done, h1, 0, 1
+    H2 Features        :done, h2, 1, 2
+    H3 Matching        :done, h3, 2, 3
+    H4 Pose            :done, h4, 3, 4
     
     section En Progreso
-    H4 Pose Estimation    :active, h4, 3, 4
+    H5 CUDA            :active, h5, 4, 5
     
     section Pendiente
-    H5 Aria Integration   :h5, 4, 5
+    H6 TensorRT        :h6, 5, 6
+    H7 Aria            :h7, 6, 7
+    H8 Fusion          :h8, 7, 8
+    H9 Loop Closure    :h9, 8, 9
+    H10 Mapping        :h10, 9, 10
 ```
 
 ---
@@ -338,25 +424,29 @@ gantt
 
 ```
 aria-slam/
-├── 📄 CMakeLists.txt      # Build configuration
-├── 📄 README.md           # Este archivo
+├── 📄 CMakeLists.txt
+├── 📄 README.md
 ├── 📁 include/
-│   └── 📄 Frame.hpp       # Declaración clase Frame
+│   ├── 📄 Frame.hpp
+│   ├── 📄 VisualOdometry.hpp
+│   ├── 📄 SensorFusion.hpp
+│   ├── 📄 LoopClosure.hpp
+│   └── 📄 Mapper.hpp
 ├── 📁 src/
-│   ├── 📄 main.cpp        # Entry point + pipeline
-│   └── 📄 Frame.cpp       # Implementación Frame
-├── 📁 build/              # Compiled binaries
-└── 🎬 test.mp4            # Test video
+│   ├── 📄 main.cpp
+│   ├── 📄 Frame.cpp
+│   ├── 📄 VisualOdometry.cpp
+│   ├── 📄 SensorFusion.cpp
+│   ├── 📄 LoopClosure.cpp
+│   └── 📄 Mapper.cpp
+├── 📁 models/
+│   ├── 📄 yolo.engine
+│   └── 📄 depth.engine
+├── 📁 vocab/
+│   └── 📄 orb_vocab.txt
+├── 📁 build/
+└── 🎬 test.mp4
 ```
-
-### Archivos Principales
-
-| Archivo | Propósito |
-|---------|-----------|
-| `Frame.hpp` | Define la clase Frame con imagen, keypoints y descriptors |
-| `Frame.cpp` | Implementa detección ORB y constructor de copia |
-| `main.cpp` | Loop principal: captura → features → match → pose → display |
-| `CMakeLists.txt` | Configuración de compilación y linking con OpenCV |
 
 ---
 
@@ -368,32 +458,41 @@ aria-slam/
 |-------------|---------|-----------|
 | CMake | ≥ 3.16 | Build system |
 | GCC/Clang | C++17 | Compilador |
-| OpenCV | ≥ 4.6 | Computer vision |
+| OpenCV | ≥ 4.6 + CUDA | Computer vision |
+| CUDA Toolkit | ≥ 12.0 | GPU computing |
+| TensorRT | ≥ 8.0 | Deep learning inference |
+| Eigen | ≥ 3.3 | Álgebra lineal |
+| PCL | ≥ 1.12 | Point clouds |
+| DBoW2 | - | Loop closure |
+| g2o | - | Graph optimization |
 
-### Instalación Ubuntu/Debian
+### Instalación Ubuntu
 
 ```bash
+# Básicos
 sudo apt update
 sudo apt install cmake g++ libopencv-dev
-```
 
-### Instalación macOS
+# CUDA
+sudo apt install nvidia-cuda-toolkit
 
-```bash
-brew install cmake opencv
+# Eigen
+sudo apt install libeigen3-dev
+
+# PCL
+sudo apt install libpcl-dev
+
+# TensorRT (desde NVIDIA)
+# https://developer.nvidia.com/tensorrt
 ```
 
 ### Verificar Instalación
 
 ```bash
-# OpenCV version
+nvcc --version          # CUDA compiler
+nvidia-smi              # GPU status
 pkg-config --modversion opencv4
-
-# CMake version
-cmake --version
-
-# Compiler
-g++ --version
+pkg-config --modversion eigen3
 ```
 
 ---
@@ -403,28 +502,21 @@ g++ --version
 ### Compilar
 
 ```bash
-# Desde la raíz del proyecto
-mkdir -p build
-cd build
+mkdir -p build && cd build
 cmake ..
-make
+make -j$(nproc)
 ```
 
 ### Ejecutar
 
 ```bash
-# Con video de prueba
 ./aria_slam
-
-# Con webcam (cambiar en código)
-# cv::VideoCapture cap(0);
 ```
 
-### Ejecutar via SSH (con X11)
+### SSH con X11
 
 ```bash
 ssh -Y user@host
-cd ~/Projects/aria/aria-slam/build
 export LIBGL_ALWAYS_SOFTWARE=1
 ./aria_slam
 ```
@@ -434,23 +526,25 @@ export LIBGL_ALWAYS_SOFTWARE=1
 ## Referencias
 
 ### Papers
-- [ORB: An efficient alternative to SIFT or SURF](https://www.willowgarage.com/sites/default/files/orb_final.pdf)
-- [Visual Odometry Tutorial](https://sites.google.com/site/scaraborotics/tutorial-on-visual-odometry)
+- [ORB-SLAM2](https://arxiv.org/abs/1610.06475)
+- [VINS-Mono](https://arxiv.org/abs/1708.03852)
+- [DBoW2](https://github.com/dorian3d/DBoW2)
 
 ### Documentación
-- [OpenCV Feature Detection](https://docs.opencv.org/4.x/db/d27/tutorial_py_table_of_contents_feature2d.html)
-- [OpenCV Camera Calibration](https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html)
-- [Essential Matrix](https://en.wikipedia.org/wiki/Essential_matrix)
+- [OpenCV CUDA](https://docs.opencv.org/4.x/d2/dbc/cuda_intro.html)
+- [TensorRT Developer Guide](https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/)
+- [Eigen Quick Reference](https://eigen.tuxfamily.org/dox/group__QuickRefPage.html)
+- [PCL Tutorials](https://pcl.readthedocs.io/)
 
 ### Recursos
 - [Meta Aria Project](https://www.projectaria.com/)
-- [ORB-SLAM2](https://github.com/raulmur/ORB_SLAM2)
+- [Multiple View Geometry Book](https://www.robots.ox.ac.uk/~vgg/hzbook/)
 
 ---
 
 ## Autor
 
-Desarrollado como proyecto de aprendizaje de C++ y Computer Vision.
+Desarrollado como proyecto de aprendizaje de C++, CUDA y sistemas SLAM.
 
 ## Licencia
 

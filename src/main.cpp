@@ -83,6 +83,7 @@ int main() {
             cv::circle(trajectory, cv::Point(x, y), 2, cv::Scalar(0, 255, 0), -1);
         }
 
+        cv::namedWindow("Trajectory", cv::WINDOW_NORMAL);
         cv::imshow("Trajectory", trajectory);
 
         // H3: Visualización matches
@@ -113,7 +114,10 @@ int main() {
         // Display
         cv::namedWindow("Aria SLAM", cv::WINDOW_NORMAL);
         cv::imshow("Aria SLAM", display);
-        if (cv::waitKey(1) == 'q') break;
+
+        // waitKey refresca TODAS las ventanas
+        char key = cv::waitKey(30);  // 30ms = ~33 FPS max
+        if (key == 'q') break;
     }
 
     delete prev_frame;
