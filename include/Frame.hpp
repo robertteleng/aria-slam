@@ -1,13 +1,19 @@
-#pragma once              // evita incluir 2 veces
+#pragma once
 #include <opencv2/opencv.hpp>
+#include <opencv2/cudafeatures2d.hpp>
 
-// Frame class to hold image, keypoints, and descriptors
+// Frame class with GPU-accelerated ORB detection
 class Frame {
 public:
     cv::Mat image;
     std::vector<cv::KeyPoint> keypoints;
     cv::Mat descriptors;
-    
+
+    // GPU version (H5)
+    Frame(const cv::Mat& img, cv::Ptr<cv::cuda::ORB> orb_gpu);
+
+    // CPU version (legacy)
     Frame(const cv::Mat& img, cv::Ptr<cv::ORB> orb);
-    Frame(const Frame& other);  // Copy constructor
+
+    Frame(const Frame& other);
 };

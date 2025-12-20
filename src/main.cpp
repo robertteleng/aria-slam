@@ -1,18 +1,28 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
+#include <opencv2/cudafeatures2d.hpp>
 #include <chrono>
 #include "Frame.hpp"
 
 int main() {
-    std::cout << "Aria SLAM" << std::endl;
+    std::cout << "Aria SLAM (CUDA)" << std::endl;
+
+    // Check CUDA availability
+    int cuda_devices = cv::cuda::getCudaEnabledDeviceCount();
+    if (cuda_devices == 0) {
+        std::cerr << "Error: No CUDA devices found!" << std::endl;
+        return -1;
+    }
+    std::cout << "CUDA devices: " << cuda_devices << std::endl;
 
     cv::VideoCapture cap("../test.mp4");
     if (!cap.isOpened()) {
-        std::cerr << "Error: Could not open camera." << std::endl;
+        std::cerr << "Error: Could not open video." << std::endl;
         return -1;
     }
-    // ORB detector
-    cv::Ptr<cv::ORB> orb = cv::ORB::create();
+
+    // GPU ORB detector (H5)
+    cv::Ptr<cv::cuda::ORB> orb = cv::cuda::ORB::create();
     // Previous frame pointer
     Frame* prev_frame = nullptr;
     // BFMatcher for ORB
