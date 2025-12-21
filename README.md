@@ -62,10 +62,6 @@ flowchart LR
         I[IMU]
     end
 
-    subgraph Process
-        SLAM((SLAM))
-    end
-
     subgraph Output
         T[Trajectory]
         M[3D Map]
@@ -75,34 +71,30 @@ flowchart LR
     I --> SLAM
     SLAM --> T
     SLAM --> M
-
-    style Input fill:#1e3a5f,stroke:#3b82f6,color:#fff
-    style Process fill:#065f46,stroke:#10b981,color:#fff
-    style Output fill:#7c2d12,stroke:#f97316,color:#fff
 ```
 
 ### The Solution (Complete Pipeline)
 
 ```mermaid
 flowchart TD
-    subgraph Sensors
+    subgraph Sensors["Sensors"]
         CAM[Camera 30Hz]
         IMU[IMU 200Hz]
     end
 
-    subgraph Frontend
+    subgraph Frontend["Frontend"]
         FE[Feature Extraction]
         FM[Feature Matching]
         PE[Pose Estimation]
     end
 
-    subgraph Backend
+    subgraph Backend["Backend"]
         SF[Sensor Fusion]
         LC[Loop Closure]
         OPT[Optimization]
     end
 
-    subgraph Output
+    subgraph Output["Output"]
         TRAJ[Trajectory]
         MAP[3D Map]
     end
@@ -114,11 +106,6 @@ flowchart TD
     LC --> OPT
     OPT --> TRAJ
     OPT --> MAP
-
-    style Sensors fill:#1e3a5f,stroke:#3b82f6,color:#fff
-    style Frontend fill:#4c1d95,stroke:#8b5cf6,color:#fff
-    style Backend fill:#065f46,stroke:#10b981,color:#fff
-    style Output fill:#7c2d12,stroke:#f97316,color:#fff
 ```
 
 ### Key Components
@@ -158,40 +145,43 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph Hardware
-        GPU[NVIDIA GPU]
+    subgraph Hardware["Hardware"]
+        ARIA[Aria Glasses]
+        GPU[RTX 2060]
     end
 
-    subgraph Input
-        CAM[Camera/Video]
-        EUROC[EuRoC Dataset]
-        IMU_S[IMU Data]
+    subgraph Capture["Capture"]
+        RGB[RGB Camera]
+        SLAM_CAM[SLAM Cameras x2]
+        IMU_S[IMU Sensor]
     end
 
-    subgraph Processing
+    subgraph Processing["Processing"]
         CUDA[OpenCV CUDA]
         TRT[TensorRT]
+        CPU[CPU Pipeline]
     end
 
-    subgraph SLAM
+    subgraph SLAM["SLAM"]
         VO[Visual Odometry]
-        FUSION[SensorFusion EKF]
-        LOOP[Loop Closure + g2o]
-        MAPPING[Mapper]
+        FUSION[Sensor Fusion]
+        LOOP[Loop Closure]
+        MAPPING[3D Mapping]
     end
 
-    subgraph Output
+    subgraph Output["Output"]
         TRAJ[Trajectory]
-        MAP[Point Cloud PLY]
-        DET[YOLO Detections]
+        MAP[Point Cloud]
+        DET[Detections]
     end
 
-    CAM --> CUDA
-    EUROC --> CUDA
-    EUROC --> IMU_S
-    IMU_S --> FUSION
+    ARIA --> RGB
+    ARIA --> SLAM_CAM
+    ARIA --> IMU_S
 
+    RGB --> CUDA
     CUDA --> VO
+    IMU_S --> FUSION
     VO --> FUSION
     FUSION --> LOOP
     LOOP --> MAPPING
@@ -200,72 +190,31 @@ flowchart TD
     TRT --> DET
 
     MAPPING --> MAP
-    LOOP --> TRAJ
-
-    style Hardware fill:#374151,stroke:#9ca3af,color:#fff
-    style Input fill:#1e3a5f,stroke:#3b82f6,color:#fff
-    style Processing fill:#065f46,stroke:#10b981,color:#fff
-    style SLAM fill:#4c1d95,stroke:#8b5cf6,color:#fff
-    style Output fill:#7c2d12,stroke:#f97316,color:#fff
+    FUSION --> TRAJ
 ```
 
 ### Layer Architecture
 
-```mermaid
-flowchart LR
-    subgraph L1[" "]
-        direction TB
-        subgraph HW[Input]
-            cam[Camera/Video]
-            imu[IMU Sensor]
-            euroc[EuRoCReader]
-        end
-        subgraph PERCEP[Perception]
-            frame[Frame]
-            orb[ORB CUDA]
-            yolo[TRTInference]
-        end
-    end
-
-    subgraph L2[" "]
-        direction TB
-        subgraph FUSE[Fusion]
-            sf[SensorFusion]
-            preint[IMUPreintegrator]
-        end
-        subgraph LOOP[Loop Closure]
-            lcd[LoopClosureDetector]
-            pgo[PoseGraphOptimizer]
-        end
-    end
-
-    subgraph L3[" "]
-        direction TB
-        subgraph MAP[Mapping]
-            mapper[Mapper]
-            ply[PLY Export]
-        end
-        subgraph APP[Application]
-            main[main.cpp]
-            eval[euroc_eval]
-        end
-    end
-
-    HW --> PERCEP
-    PERCEP --> FUSE
-    FUSE --> LOOP
-    LOOP --> MAP
-    MAP --> APP
-
-    style HW fill:#374151,stroke:#9ca3af,color:#fff
-    style PERCEP fill:#4c1d95,stroke:#8b5cf6,color:#fff
-    style FUSE fill:#065f46,stroke:#10b981,color:#fff
-    style LOOP fill:#7c3aed,stroke:#a78bfa,color:#fff
-    style MAP fill:#1e3a5f,stroke:#3b82f6,color:#fff
-    style APP fill:#7c2d12,stroke:#f97316,color:#fff
-    style L1 fill:none,stroke:none
-    style L2 fill:none,stroke:none
-    style L3 fill:none,stroke:none
+```
+┌─────────────────────────────────────────┐
+│            Application Layer            │
+│         (main, ROS node, CLI)           │
+├─────────────────────────────────────────┤
+│            Pipeline Layer               │
+│      (SlamPipeline, orchestration)      │
+├─────────────────────────────────────────┤
+│           Perception Layer              │
+│    (ORB, YOLO, Depth, LoopClosure)      │
+├─────────────────────────────────────────┤
+│            Fusion Layer                 │
+│         (EKF, PoseGraph, g2o)           │
+├─────────────────────────────────────────┤
+│            Mapping Layer                │
+│      (Mapper, PointCloud, Export)       │
+├─────────────────────────────────────────┤
+│           Hardware Layer                │
+│   (Camera, IMU, Aria, EuRoCReader)      │
+└─────────────────────────────────────────┘
 ```
 
 ### Class Diagram
@@ -277,84 +226,77 @@ classDiagram
         +vector~KeyPoint~ keypoints
         +Mat descriptors
         +GpuMat gpu_descriptors
-        +Frame(Mat, ORB_GPU)
-        +Frame(Mat, ORB_CPU)
+        +Frame(Mat img, ORB orb)
     }
 
-    class SensorFusion {
-        +Vector3d position
-        +Vector3d velocity
-        +Quaterniond orientation
-        +Matrix15x15 P
-        +addIMU(IMUMeasurement)
-        +addVisualPose(R, t)
-        +predictEKF()
-        +updateEKF()
+    class VisualOdometry {
+        +Mat K
+        +Mat position
+        +Mat rotation
+        +processFrame(Frame)
+        +getTrajectory()
+    }
+
+    class EKF {
+        +VectorXd state_15D
+        +MatrixXd covariance_15x15
+        +predict(accel, gyro, dt)
+        +update(position, orientation)
     }
 
     class LoopClosureDetector {
-        +deque~KeyFrame~ keyframes
-        +addKeyFrame(KeyFrame)
-        +detect(KeyFrame) LoopCandidate
-        +findCandidates()
-        +verifyGeometry()
+        +findCandidates(Frame)
+        +verifyGeometry(matches)
+        +computeRelativePose()
     }
 
     class PoseGraphOptimizer {
-        +setInitialPose(id, pose)
-        +addOdometryEdge(from, to, delta)
-        +addLoopEdge(from, to, delta)
-        +optimize(iterations)
-        +getOptimizedPose(id)
+        +addVertex(pose)
+        +addOdometryEdge()
+        +addLoopEdge()
+        +optimize()
     }
 
     class Mapper {
         +vector~MapPoint~ points
-        +triangulate(kp1, kp2, matches, poses)
+        +triangulate(Frame, Frame, matches)
         +filterOutliers()
         +exportPLY()
-        +exportPCD()
     }
 
-    class EuRoCReader {
-        +load()
-        +getNext(image, imu, timestamp)
-        +getGroundTruth(timestamp)
-        +getCameraMatrix()
-    }
-
-    Frame --> SensorFusion : pose estimate
-    SensorFusion --> LoopClosureDetector : fused pose
-    LoopClosureDetector --> PoseGraphOptimizer : loop constraints
-    PoseGraphOptimizer --> Mapper : optimized poses
-    EuRoCReader --> Frame : images
-    EuRoCReader --> SensorFusion : IMU data
+    Frame --> VisualOdometry
+    VisualOdometry --> EKF
+    EKF --> LoopClosureDetector
+    LoopClosureDetector --> PoseGraphOptimizer
+    PoseGraphOptimizer --> Mapper
 ```
 
 ### Data Flow
 
 ```mermaid
 sequenceDiagram
-    participant ER as EuRoCReader
-    participant F as Frame
-    participant SF as SensorFusion
-    participant LCD as LoopClosureDetector
-    participant PGO as PoseGraphOptimizer
+    participant C as Camera
+    participant I as IMU
+    participant VO as VisualOdometry
+    participant SF as EKF
+    participant LC as LoopClosure
     participant M as Mapper
 
-    loop Each Frame
-        ER->>F: image (30 Hz)
-        ER->>SF: IMU batch (200 Hz)
-        SF->>SF: predictEKF()
-        F->>F: ORB extract (GPU)
-        F->>F: match (GPU)
-        F->>SF: R, t (recoverPose)
-        SF->>SF: updateEKF()
-        SF->>LCD: KeyFrame
-        LCD->>LCD: detect loop
-        LCD->>PGO: addLoopEdge
-        PGO->>PGO: optimize
-        PGO->>M: optimized poses
+    loop 200 Hz
+        I->>SF: accel, gyro
+        SF->>SF: predict()
+    end
+
+    loop 30 Hz
+        C->>VO: frame
+        VO->>VO: extract features (GPU)
+        VO->>VO: match (GPU)
+        VO->>VO: estimate pose
+        VO->>SF: R, t
+        SF->>SF: update()
+        SF->>LC: fused pose
+        LC->>LC: check loop
+        LC->>M: optimized pose
         M->>M: triangulate
     end
 ```
@@ -373,27 +315,25 @@ flowchart LR
     end
 
     subgraph GPU
-        UP[GpuMat Upload]
+        UP[Upload]
         ORB[ORB CUDA]
-        MATCH[BFMatcher CUDA]
         YOLO[YOLO TensorRT]
+        DEPTH[Depth TensorRT]
         DOWN[Download]
     end
 
     CAP --> UP
-    UP --> ORB --> MATCH --> DOWN
+    UP --> ORB --> DOWN
     UP --> YOLO --> DOWN
+    UP --> DEPTH --> DOWN
     DOWN --> OUT
-
-    style CPU fill:#374151,stroke:#9ca3af,color:#fff
-    style GPU fill:#065f46,stroke:#10b981,color:#fff
 ```
 
 ### Sensor Fusion Pipeline (H8)
 
 ```mermaid
 flowchart TD
-    subgraph IMU[IMU 200Hz]
+    subgraph IMU["IMU 200Hz"]
         ACC[Accelerometer]
         GYRO[Gyroscope]
     end
@@ -405,7 +345,7 @@ flowchart TD
         D["P = F*P*F' + Q"]
     end
 
-    subgraph VO[VO 30Hz]
+    subgraph VO["VO 30Hz"]
         POSE[Pose R,t]
     end
 
@@ -420,11 +360,6 @@ flowchart TD
     Predict --> Update
     POSE --> Update
     Update --> OUTPUT[Fused Pose]
-
-    style IMU fill:#1e3a5f,stroke:#3b82f6,color:#fff
-    style Predict fill:#4c1d95,stroke:#8b5cf6,color:#fff
-    style VO fill:#065f46,stroke:#10b981,color:#fff
-    style Update fill:#7c2d12,stroke:#f97316,color:#fff
 ```
 
 ### Loop Closure Pipeline (H9)
@@ -449,10 +384,6 @@ flowchart TD
     end
 
     INLIERS -->|No| REJECT[Reject]
-
-    style Detection fill:#1e3a5f,stroke:#3b82f6,color:#fff
-    style Verification fill:#4c1d95,stroke:#8b5cf6,color:#fff
-    style Optimization fill:#065f46,stroke:#10b981,color:#fff
 ```
 
 ### Mapping Pipeline (H10)
@@ -468,7 +399,7 @@ flowchart LR
     subgraph Triangulation
         PROJ["P = K * [R|t]"]
         TRI[cv::triangulatePoints]
-        FILT["Filter: depth, parallax, reproj"]
+        FILT[Filter: depth, parallax, reproj]
     end
 
     subgraph Output
@@ -483,10 +414,6 @@ flowchart LR
     TRI --> FILT --> PC
     PC --> VIS
     PC --> EXP
-
-    style Input fill:#1e3a5f,stroke:#3b82f6,color:#fff
-    style Triangulation fill:#4c1d95,stroke:#8b5cf6,color:#fff
-    style Output fill:#7c2d12,stroke:#f97316,color:#fff
 ```
 
 ---
@@ -524,6 +451,8 @@ flowchart LR
 | H15 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | ⏳ |
 | H16 | Release | Docker container, README + GIF demo | ⏳ |
 | H17 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
+| H18 | Stereo Vision | Stereo matching GPU, disparity → depth | ⏳ |
+| H19 | Path Planning | A*/RRT* navigation on 3D map | ⏳ |
 
 ### Visual Progress
 
@@ -554,9 +483,11 @@ gantt
     H15 Architecture   :h15, 13, 14
     H16 Release        :h16, 14, 15
     H17 ROS2           :h17, 15, 16
+    H18 Stereo         :h18, 16, 17
+    H19 Path Planning  :h19, 17, 18
 
     section Hardware
-    H7 Aria            :h7, 16, 17
+    H7 Aria            :h7, 18, 19
 ```
 
 ---
@@ -805,20 +736,6 @@ export LIBGL_ALWAYS_SOFTWARE=1
 | GPU Usage | ~200MB VRAM |
 | YOLO Inference | ~5ms |
 | ORB Extraction | ~10ms (GPU) |
-
-### EuRoC Benchmark Results
-
-Evaluated on [EuRoC MAV Dataset](https://projects.asl.ethz.ch/datasets/) sequences:
-
-| Sequence | ATE (m) | RPE (m) | Loop Closures | Map Points |
-|----------|---------|---------|---------------|------------|
-| MH_01_easy | - | - | - | - |
-| MH_02_easy | - | - | - | - |
-| MH_03_medium | - | - | - | - |
-| V1_01_easy | - | - | - | - |
-| V2_01_easy | - | - | - | - |
-
-> Results pending full evaluation run.
 
 ---
 
