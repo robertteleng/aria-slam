@@ -195,26 +195,29 @@ flowchart TD
 
 ### Layer Architecture
 
-```
-┌─────────────────────────────────────────┐
-│            Application Layer            │
-│         (main, ROS node, CLI)           │
-├─────────────────────────────────────────┤
-│            Pipeline Layer               │
-│      (SlamPipeline, orchestration)      │
-├─────────────────────────────────────────┤
-│           Perception Layer              │
-│    (ORB, YOLO, Depth, LoopClosure)      │
-├─────────────────────────────────────────┤
-│            Fusion Layer                 │
-│         (EKF, PoseGraph, g2o)           │
-├─────────────────────────────────────────┤
-│            Mapping Layer                │
-│      (Mapper, PointCloud, Export)       │
-├─────────────────────────────────────────┤
-│           Hardware Layer                │
-│   (Camera, IMU, Aria, EuRoCReader)      │
-└─────────────────────────────────────────┘
+```mermaid
+block-beta
+    columns 1
+    block:APP["Application Layer"]
+        main["main.cpp"] ros["ROS2 Node"] cli["euroc_eval"]
+    end
+    block:PIPE["Pipeline Layer"]
+        slam["SlamPipeline"] orch["Orchestration"]
+    end
+    block:PERCEP["Perception Layer"]
+        orb["ORB CUDA"] yolo["YOLO TRT"] depth["Depth TRT"] lc["Loop Closure"]
+    end
+    block:FUSE["Fusion Layer"]
+        ekf["EKF 15-state"] pg["PoseGraph"] g2o["g2o"]
+    end
+    block:MAP["Mapping Layer"]
+        mapper["Mapper"] pc["PointCloud"] exp["PLY/PCD Export"]
+    end
+    block:HW["Hardware Layer"]
+        cam["Camera"] imu["IMU"] aria["Aria SDK"] euroc["EuRoCReader"]
+    end
+
+    APP --> PIPE --> PERCEP --> FUSE --> MAP --> HW
 ```
 
 ### Class Diagram
