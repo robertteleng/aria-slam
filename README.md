@@ -525,6 +525,7 @@ cudaDeviceSynchronize();
 | H18 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | ⏳ |
 | H19 | Docker + Release | Docker container, README + GIF demo | ⏳ |
 | H20 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
+| H21 | VLM Integration | FastVLM scene understanding via ROS2 topics | ⏳ |
 
 ### Visual Progress
 
@@ -560,9 +561,10 @@ gantt
     H18 Architecture   :h18, 16, 17
     H19 Docker         :h19, 17, 18
     H20 ROS2           :h20, 18, 19
+    H21 VLM            :h21, 19, 20
 
     section Hardware
-    H7 Aria            :h7, 19, 20
+    H7 Aria            :h7, 20, 21
 ```
 
 ---
