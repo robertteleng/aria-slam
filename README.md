@@ -486,45 +486,45 @@ cudaDeviceSynchronize();
 
 ## Project Milestones
 
-### Phase 1: Core SLAM ✅
+### Phase 1: Core SLAM [x]
 
 | Milestone | Name | Description | Status |
 |-----------|------|-------------|--------|
-| H1 | Setup + Capture | CMake, OpenCV, video input | ✅ |
-| H2 | Feature Extraction | ORB detector, keypoints | ✅ |
-| H3 | Feature Matching | BFMatcher, ratio test | ✅ |
-| H4 | Pose Estimation | Essential matrix, trajectory | ✅ |
-| H5 | OpenCV CUDA | GpuMat, GPU ORB, GPU Matcher, smart pointers | ✅ |
-| H6 | TensorRT | YOLOv12s object detection | ✅ |
-| H7 | Aria Integration | Aria SDK, sensor capture | ⏳ Hardware |
-| H8 | Sensor Fusion | EKF 15-state, IMU + VO fusion | ✅ |
-| H9 | Loop Closure | g2o pose graph optimization | ✅ |
-| H10 | 3D Mapping | Triangulation, outlier filter, PLY/PCD export | ✅ |
+| H1 | Setup + Capture | CMake, OpenCV, video input | [x] |
+| H2 | Feature Extraction | ORB detector, keypoints | [x] |
+| H3 | Feature Matching | BFMatcher, ratio test | [x] |
+| H4 | Pose Estimation | Essential matrix, trajectory | [x] |
+| H5 | OpenCV CUDA | GpuMat, GPU ORB, GPU Matcher, smart pointers | [x] |
+| H6 | TensorRT | YOLOv12s object detection | [x] |
+| H7 | Aria Integration | Aria SDK, sensor capture | [~] Hardware |
+| H8 | Sensor Fusion | EKF 15-state, IMU + VO fusion | [x] |
+| H9 | Loop Closure | g2o pose graph optimization | [x] |
+| H10 | 3D Mapping | Triangulation, outlier filter, PLY/PCD export | [x] |
 
-### Phase 2: Optimization ⏳
-
-| Milestone | Name | Description | Status |
-|-----------|------|-------------|--------|
-| H11 | CUDA Streams | ORB + YOLO parallel GPU, preprocessing on GPU | ⏳ |
-| H12 | Multithreading | std::thread, producer/consumer queues, sync | ⏳ |
-| H13 | Depth Estimation | DepthAnything/MiDaS TensorRT, dense mapping | ⏳ |
-| H14 | Configuration | YAML config file for parameters | ⏳ |
-
-### Phase 3: Advanced Features ⏳
+### Phase 2: Optimization [~]
 
 | Milestone | Name | Description | Status |
 |-----------|------|-------------|--------|
-| H15 | Stereo Vision | Stereo matching GPU, disparity → depth | ⏳ |
-| H16 | Path Planning | A*/RRT* navigation on 3D map | ⏳ |
-| H17 | Pangolin Visualization | 3D real-time trajectory and map viewer | ⏳ |
+| H11 | CUDA Streams | ORB + YOLO parallel GPU, preprocessing on GPU | [~] |
+| H12 | Multithreading | std::thread, producer/consumer queues, sync | [ ] |
+| H13 | Depth Estimation | DepthAnything/MiDaS TensorRT, dense mapping | [ ] |
+| H14 | Configuration | YAML config file for parameters | [ ] |
 
-### Phase 4: Production ⏳
+### Phase 3: Advanced Features [ ]
 
 | Milestone | Name | Description | Status |
 |-----------|------|-------------|--------|
-| H18 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | ⏳ |
-| H19 | Docker + Release | Docker container, README + GIF demo | ⏳ |
-| H20 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
+| H15 | Stereo Vision | Stereo matching GPU, disparity → depth | [ ] |
+| H16 | Path Planning | A*/RRT* navigation on 3D map | [ ] |
+| H17 | Pangolin Visualization | 3D real-time trajectory and map viewer | [ ] |
+
+### Phase 4: Production [ ]
+
+| Milestone | Name | Description | Status |
+|-----------|------|-------------|--------|
+| H18 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | [ ] |
+| H19 | Docker + Release | Docker container, README + GIF demo | [ ] |
+| H20 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | [ ] |
 
 ### Visual Progress
 
