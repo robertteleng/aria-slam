@@ -508,17 +508,23 @@ flowchart LR
 | H11 | CUDA Streams | ORB + YOLO parallel GPU, preprocessing on GPU | ⏳ |
 | H12 | Multithreading | std::thread, producer/consumer queues, sync | ⏳ |
 | H13 | Depth Estimation | DepthAnything/MiDaS TensorRT, dense mapping | ⏳ |
-| H14 | Configuration | YAML config, Pangolin 3D visualization | ⏳ |
+| H14 | Configuration | YAML config file for parameters | ⏳ |
 
-### Phase 3: Production ⏳
+### Phase 3: Advanced Features ⏳
 
 | Milestone | Name | Description | Status |
 |-----------|------|-------------|--------|
-| H15 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | ⏳ |
-| H16 | Release | Docker container, README + GIF demo | ⏳ |
-| H17 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
-| H18 | Stereo Vision | Stereo matching GPU, disparity → depth | ⏳ |
-| H19 | Path Planning | A*/RRT* navigation on 3D map | ⏳ |
+| H15 | Stereo Vision | Stereo matching GPU, disparity → depth | ⏳ |
+| H16 | Path Planning | A*/RRT* navigation on 3D map | ⏳ |
+| H17 | Pangolin Visualization | 3D real-time trajectory and map viewer | ⏳ |
+
+### Phase 4: Production ⏳
+
+| Milestone | Name | Description | Status |
+|-----------|------|-------------|--------|
+| H18 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | ⏳ |
+| H19 | Docker + Release | Docker container, README + GIF demo | ⏳ |
+| H20 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
 
 ### Visual Progress
 
@@ -545,15 +551,18 @@ gantt
     H13 Depth          :h13, 11, 12
     H14 Config         :h14, 12, 13
 
-    section Phase 3 - Production
-    H15 Architecture   :h15, 13, 14
-    H16 Release        :h16, 14, 15
-    H17 ROS2           :h17, 15, 16
-    H18 Stereo         :h18, 16, 17
-    H19 Path Planning  :h19, 17, 18
+    section Phase 3 - Advanced
+    H15 Stereo         :h15, 13, 14
+    H16 Path Planning  :h16, 14, 15
+    H17 Pangolin       :h17, 15, 16
+
+    section Phase 4 - Production
+    H18 Architecture   :h18, 16, 17
+    H19 Docker         :h19, 17, 18
+    H20 ROS2           :h20, 18, 19
 
     section Hardware
-    H7 Aria            :h7, 18, 19
+    H7 Aria            :h7, 19, 20
 ```
 
 ---
