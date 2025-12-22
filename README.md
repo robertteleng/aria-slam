@@ -308,6 +308,14 @@ sequenceDiagram
 
 ## Processing Pipeline
 
+**Subsections:**
+- [GPU Pipeline (H5-H6)](#gpu-pipeline-h5-h6)
+- [Sensor Fusion Pipeline (H8)](#sensor-fusion-pipeline-h8)
+- [Loop Closure Pipeline (H9)](#loop-closure-pipeline-h9)
+- [Mapping Pipeline (H10)](#mapping-pipeline-h10)
+- [CUDA Streams (H11)](#cuda-streams-h11)
+- [VLM Integration (H22)](#vlm-integration-h22)
+
 ### GPU Pipeline (H5-H6)
 
 ```mermaid
@@ -482,6 +490,45 @@ cudaDeviceSynchronize();
 
 **Expected improvement:** ~2x FPS increase when running multiple GPU tasks.
 
+### VLM Integration (H22)
+
+**Goal:** Add scene understanding via Vision Language Models without compromising real-time SLAM performance.
+
+**Architecture:** Separate C++ core (critical path) from Python VLM (non-critical) via ROS2 topics.
+
+```mermaid
+flowchart LR
+    subgraph SLAM["aria-slam (C++)"]
+        CAM[Camera] --> FRAME[Frame]
+        FRAME --> ORB[ORB + Pose]
+        FRAME --> PUB[ROS2 Publisher]
+    end
+
+    subgraph VLM["aria-scene (Python)"]
+        SUB[ROS2 Subscriber] --> HYBRID[HybridEngine]
+        HYBRID --> FASTVIT[FastViT ~15ms]
+        HYBRID --> FASTVLM[FastVLM ~400ms]
+        FASTVIT --> DESC[Scene Description]
+        FASTVLM --> DESC
+        DESC --> TTS[Text-to-Speech]
+    end
+
+    PUB -->|/camera/image| SUB
+```
+
+**Hybrid Routing:** aria-scene uses intelligent routing between models:
+- **FastViT** (~15ms): Fast classification for simple scenes (70%)
+- **FastVLM** (~400ms): Detailed VLM for complex scenes (30%)
+- **Average latency:** ~200ms with hybrid routing
+
+**Why this architecture?**
+- **Decoupled:** VLM lag doesn't block SLAM (30+ FPS maintained)
+- **Flexible:** Can swap VLM models without recompiling C++
+- **Scalable:** VLM can run on separate GPU or even remote server
+- **Voice Control:** "describe", "fast mode", "detailed mode" commands
+
+**Related project:** [aria-scene](https://github.com/robertteleng/aria-scene) - Python VLM module with FastVLM + FastViT hybrid engine
+
 ---
 
 ## Project Milestones
@@ -517,16 +564,16 @@ cudaDeviceSynchronize();
 | H15 | Stereo Vision | Stereo matching GPU, disparity → depth | ⏳ |
 | H16 | Path Planning | A*/RRT* navigation on 3D map | ⏳ |
 | H17 | Pangolin Visualization | 3D real-time trajectory and map viewer | ⏳ |
+| H18 | Obstacle Avoidance | Depth-based alerts with spatial audio feedback | ⏳ |
 
 ### Phase 4: Production ⏳
 
 | Milestone | Name | Description | Status |
 |-----------|------|-------------|--------|
-| H18 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | ⏳ |
-| H19 | Docker + Release | Docker container, README + GIF demo | ⏳ |
-| H20 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
-| H21 | VLM Integration | FastVLM scene understanding via ROS2 topics | ⏳ |
-| H22 | Obstacle Avoidance | Depth-based alerts with spatial audio feedback | ⏳ |
+| H19 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | ⏳ |
+| H20 | Docker + Release | Docker container, README + GIF demo | ⏳ |
+| H21 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
+| H22 | VLM Integration | FastVLM scene understanding via ROS2 topics | ⏳ |
 
 ### Visual Progress
 
@@ -557,13 +604,13 @@ gantt
     H15 Stereo         :h15, 13, 14
     H16 Path Planning  :h16, 14, 15
     H17 Pangolin       :h17, 15, 16
+    H18 Obstacle       :h18, 16, 17
 
     section Phase 4 - Production
-    H18 Architecture   :h18, 16, 17
-    H19 Docker         :h19, 17, 18
-    H20 ROS2           :h20, 18, 19
-    H21 VLM            :h21, 19, 20
-    H22 Obstacle       :h22, 20, 21
+    H19 Architecture   :h19, 17, 18
+    H20 Docker         :h20, 18, 19
+    H21 ROS2           :h21, 19, 20
+    H22 VLM            :h22, 20, 21
 
     section Hardware
     H7 Aria            :h7, 21, 22
@@ -573,14 +620,46 @@ gantt
 
 ## Code Structure
 
+### Current Structure
+
+```
+aria-slam/
+├── CMakeLists.txt
+├── README.md
+├── include/
+│   ├── Frame.hpp              # Frame with GPU descriptors
+│   ├── TRTInference.hpp       # TensorRT YOLO inference
+│   ├── SensorFusion.hpp       # EKF 15-state fusion
+│   ├── LoopClosureDetector.hpp # Loop detection + g2o
+│   ├── PoseGraphOptimizer.hpp # g2o pose graph
+│   ├── Mapper.hpp             # 3D triangulation
+│   └── EuRoCReader.hpp        # Dataset reader
+├── src/
+│   ├── main.cpp               # Main SLAM pipeline
+│   ├── euroc_eval.cpp         # EuRoC benchmark
+│   ├── TRTInference.cpp       # TensorRT implementation
+│   ├── SensorFusion.cpp       # EKF implementation
+│   ├── LoopClosureDetector.cpp
+│   ├── PoseGraphOptimizer.cpp
+│   ├── Mapper.cpp
+│   └── EuRoCReader.cpp
+├── datasets/
+│   └── MH_01_easy/            # EuRoC sequences
+├── models/
+│   └── yolov12s.engine        # YOLOv12s TensorRT engine
+└── build/
+```
+
+### Future Structure (H19 Refactor)
+
 ```
 aria-slam/
 ├── CMakeLists.txt
 ├── README.md
 ├── config.yaml                # Configuration (H14)
-├── Dockerfile                 # Container (H16)
+├── Dockerfile                 # Container (H20)
 ├── include/
-│   ├── hardware/              # H15 refactor
+│   ├── hardware/
 │   │   ├── Camera.hpp
 │   │   ├── IMUSensor.hpp
 │   │   └── EuRoCReader.hpp
@@ -598,10 +677,8 @@ aria-slam/
 │   └── pipeline/
 │       └── SlamPipeline.hpp
 ├── src/
-│   ├── main.cpp               # Main SLAM pipeline
-│   ├── euroc_eval.cpp         # EuRoC dataset evaluation
-│   └── ...                    # Implementations
-├── tests/                     # H15 testing
+│   └── ...
+├── tests/                     # H19 testing
 │   ├── unit/
 │   │   ├── test_ekf.cpp
 │   │   ├── test_orb.cpp
@@ -609,9 +686,7 @@ aria-slam/
 │   └── integration/
 │       └── test_pipeline.cpp
 ├── datasets/
-│   └── MH_01_easy/            # EuRoC sequences
 ├── models/
-│   └── yolov12s.engine        # YOLOv12s TensorRT engine
 └── build/
 ```
 
@@ -631,9 +706,9 @@ aria-slam/
 | Eigen | >= 3.3 | Linear algebra |
 | g2o | - | Graph optimization |
 | yaml-cpp | - | Configuration (H14) |
-| Pangolin | - | 3D visualization (H14) |
-| GTest | - | Testing (H15) |
-| ROS2 Humble | - | Robot integration (H17) |
+| Pangolin | - | 3D visualization (H17) |
+| GTest | - | Testing (H19) |
+| ROS2 Humble | - | Robot integration (H21) |
 
 ### Ubuntu Installation
 
@@ -744,7 +819,7 @@ make -j$(nproc)
 ./aria_slam
 ```
 
-### Run Tests (H15)
+### Run Tests (H19)
 
 ```bash
 cd build
@@ -773,7 +848,7 @@ Output includes:
 - Trajectory visualization (estimated vs ground truth)
 - Point cloud map (PLY format)
 
-### Docker (H16)
+### Docker (H20)
 
 ```bash
 # Build
@@ -783,7 +858,7 @@ docker build -t aria-slam .
 docker run --gpus all -v /dev/video0:/dev/video0 aria-slam
 ```
 
-### ROS2 (H17)
+### ROS2 (H21)
 
 ```bash
 # Build
@@ -809,12 +884,15 @@ export LIBGL_ALWAYS_SOFTWARE=1
 
 ## Performance
 
-| Metric | Value |
-|--------|-------|
-| FPS | 150+ (GPU pipeline) |
-| GPU Usage | ~200MB VRAM |
-| YOLO Inference | ~5ms |
-| ORB Extraction | ~10ms (GPU) |
+| Metric | Value | Notes |
+|--------|-------|-------|
+| FPS (ORB only) | 150+ | GPU pipeline without inference |
+| FPS (ORB + YOLO) | 60-80 | Sequential execution |
+| FPS (with H11 streams) | 100+ | Parallel GPU execution (expected) |
+| GPU Usage | ~500MB VRAM | ORB + YOLO |
+| YOLO Inference | ~5ms | YOLOv12s TensorRT FP16 |
+| ORB Extraction | ~10ms | GPU accelerated |
+| EKF Update | <1ms | 15-state fusion |
 
 ---
 
@@ -841,6 +919,9 @@ export LIBGL_ALWAYS_SOFTWARE=1
 | **ROS** | Robot Operating System | Robotics middleware framework |
 | **PLY** | Polygon File Format | 3D point cloud format |
 | **PCD** | Point Cloud Data | PCL native point cloud format |
+| **VLM** | Vision Language Model | AI model that understands images + text |
+| **TTS** | Text-to-Speech | Audio output from text |
+| **SM** | Streaming Multiprocessor | GPU processing unit for CUDA streams |
 
 ### Technical Terms
 
@@ -860,6 +941,9 @@ export LIBGL_ALWAYS_SOFTWARE=1
 | **Covisibility** | Frames that observe same map points |
 | **Preintegration** | Combining multiple IMU measurements between frames |
 | **Marginalization** | Removing old states while preserving information |
+| **CUDA Stream** | Queue of GPU operations that execute in order |
+| **Async inference** | Non-blocking GPU execution |
+| **Hybrid routing** | Choosing between fast/detailed models based on scene complexity |
 
 ---
 
