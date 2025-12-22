@@ -1,6 +1,17 @@
 # Aria SLAM
 
-Visual SLAM system in C++ with GPU acceleration (CUDA/TensorRT) for real-time autonomous navigation. Modular implementation including Visual Odometry, feature matching, pose estimation, and deep learning inference support.
+Visual-Inertial SLAM system in C++ with GPU acceleration (CUDA/TensorRT) designed for **Meta Aria glasses**. The goal is to enable **real-time navigation assistance for visually impaired users** through spatial audio feedback and scene understanding.
+
+The architecture is inspired by professional UAV navigation systems (DJI, PX4) and state-of-the-art SLAM implementations (ORB-SLAM2, VINS-Mono), adapting their proven techniques for wearable devices. The system combines classical computer vision (ORB features, EKF sensor fusion, g2o optimization) with modern deep learning (YOLO object detection, depth estimation, VLM scene understanding) to build a complete perception pipeline that runs in real-time (30 FPS) on embedded GPUs.
+
+**Key features:**
+- **Visual Odometry:** ORB-CUDA feature extraction and matching
+- **Sensor Fusion:** 15-state EKF combining IMU (200Hz) + VO (30Hz)
+- **Loop Closure:** g2o pose graph optimization with RANSAC verification
+- **3D Mapping:** Triangulation with outlier filtering, PLY/PCD export
+- **Object Detection:** YOLOv12s via TensorRT (~5ms inference)
+- **VLM Integration:** Scene understanding via [aria-scene](https://github.com/robertteleng/aria-scene) (FastVLM + FastViT)
+- **Obstacle Avoidance:** Depth-based alerts with spatial audio (planned)
 
 ---
 
