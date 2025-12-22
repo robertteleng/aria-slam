@@ -332,6 +332,69 @@ flowchart LR
     DOWN --> OUT
 ```
 
+### CUDA Streams (H11)
+
+**Problem:** Sequential GPU execution wastes resources. While ORB computes, YOLO waits idle.
+
+```
+Sequential (current):
+|--ORB 10ms--|--YOLO 5ms--|--Depth 8ms--| = 23ms total
+
+Parallel (with streams):
+|--ORB 10ms--|
+|--YOLO 5ms--|
+|--Depth 8ms--|
+= 10ms total (limited by slowest)
+```
+
+**Solution:** CUDA Streams allow independent GPU operations to run concurrently on different SM (Streaming Multiprocessors).
+
+```mermaid
+flowchart LR
+    subgraph CPU
+        CAP[Capture]
+        SYNC[cudaDeviceSynchronize]
+        OUT[Output]
+    end
+
+    subgraph Stream1["Stream 1"]
+        ORB[ORB CUDA]
+    end
+
+    subgraph Stream2["Stream 2"]
+        YOLO[YOLO TensorRT]
+    end
+
+    subgraph Stream3["Stream 3"]
+        DEPTH[Depth TensorRT]
+    end
+
+    CAP --> ORB
+    CAP --> YOLO
+    CAP --> DEPTH
+    ORB --> SYNC
+    YOLO --> SYNC
+    DEPTH --> SYNC
+    SYNC --> OUT
+```
+
+**Implementation:**
+```cpp
+// Create streams
+cudaStream_t stream_orb, stream_yolo;
+cudaStreamCreate(&stream_orb);
+cudaStreamCreate(&stream_yolo);
+
+// Run in parallel
+orb_gpu->detectAndComputeAsync(gpu_frame, cv::noArray(), keypoints, descriptors, false, stream_orb);
+yolo.inferAsync(gpu_frame, stream_yolo);
+
+// Wait for all
+cudaDeviceSynchronize();
+```
+
+**Expected improvement:** ~2x FPS increase when running multiple GPU tasks.
+
 ### Sensor Fusion Pipeline (H8)
 
 ```mermaid
