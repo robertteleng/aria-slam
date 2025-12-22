@@ -526,6 +526,7 @@ cudaDeviceSynchronize();
 | H19 | Docker + Release | Docker container, README + GIF demo | ⏳ |
 | H20 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
 | H21 | VLM Integration | FastVLM scene understanding via ROS2 topics | ⏳ |
+| H22 | Audio Feedback | Spatial audio alerts for assisted navigation | ⏳ |
 
 ### Visual Progress
 
@@ -562,9 +563,10 @@ gantt
     H19 Docker         :h19, 17, 18
     H20 ROS2           :h20, 18, 19
     H21 VLM            :h21, 19, 20
+    H22 Audio          :h22, 20, 21
 
     section Hardware
-    H7 Aria            :h7, 20, 21
+    H7 Aria            :h7, 21, 22
 ```
 
 ---
