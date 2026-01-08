@@ -9,11 +9,13 @@ class Frame {
 public:
     Frame(const cv::Mat& image);
     void extractFeatures();
+    void uploadToGPU();
     
     cv::Mat image_;
+    cv::cuda::GpuMat d_image_;
     std::vector<cv::KeyPoint> keypoints_;
     cv::Mat descriptors_;
 
 private:
-    cv::Ptr<cv::ORB> orb_;
+    cv::Ptr<cv::cuda::ORB> orb_;
 };
