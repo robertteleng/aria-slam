@@ -2,6 +2,18 @@
 #include <iostream>
 #include "Frame.hpp"
 
+const float LOWE_RATIO = 0.75f;
+
+std::vector<cv::DMatch> filterMatches(const std::vector<std::vector<cv::DMatch>>& knnMatches) {
+    std::vector<cv::DMatch> goodMatches;
+    for (const auto& knn : knnMatches) {
+        if (knn.size() >= 2 && knn[0].distance < LOWE_RATIO * knn[1].distance) {
+            goodMatches.push_back(knn[0]);
+        }
+    }
+    return goodMatches;
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <video_file>" << std::endl;
@@ -26,7 +38,10 @@ int main(int argc, char** argv) {
         if (prevFrame != nullptr && !prevFrame->descriptors_.empty() && !currFrame->descriptors_.empty()) {
             std::vector<std::vector<cv::DMatch>> knnMatches;
             matcher->knnMatch(prevFrame->descriptors_, currFrame->descriptors_, knnMatches, 2);
-            std::cout << "KNN Matches: " << knnMatches.size() << std::endl;
+            
+            auto goodMatches = filterMatches(knnMatches);
+            std::cout << "Good matches: " << goodMatches.size() << " / " << knnMatches.size() << std::endl;
+            
             delete prevFrame;
         }
         
