@@ -9,5 +9,8 @@ find_package(CUDA REQUIRED)
 
 include_directories(${OpenCV_INCLUDE_DIRS} include)
 
-add_executable(aria_slam src/main.cpp)
+add_executable(aria_slam 
+    src/main.cpp
+    src/Frame.cpp
+)
 target_link_libraries(aria_slam ${OpenCV_LIBS})
