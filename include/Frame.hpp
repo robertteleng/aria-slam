@@ -8,11 +8,17 @@
 class Frame {
 public:
     Frame(const cv::Mat& image);
+    Frame(const cv::Mat& image, cv::cuda::Stream& stream);
     void extractFeatures();
+    void extractFeaturesAsync(cv::cuda::Stream& stream);
     void uploadToGPU();
+    void uploadToGPU(cv::cuda::Stream& stream);
+    void downloadResults();
     
     cv::Mat image_;
     cv::cuda::GpuMat d_image_;
+    cv::cuda::GpuMat d_keypoints_;
+    cv::cuda::GpuMat d_descriptors_;
     std::vector<cv::KeyPoint> keypoints_;
     cv::Mat descriptors_;
 
