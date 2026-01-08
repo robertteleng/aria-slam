@@ -23,10 +23,10 @@ int main(int argc, char** argv) {
         Frame* currFrame = new Frame(img);
         currFrame->extractFeatures();
         
-        if (prevFrame != nullptr) {
-            std::vector<cv::DMatch> matches;
-            matcher->match(prevFrame->descriptors_, currFrame->descriptors_, matches);
-            std::cout << "Matches: " << matches.size() << std::endl;
+        if (prevFrame != nullptr && !prevFrame->descriptors_.empty() && !currFrame->descriptors_.empty()) {
+            std::vector<std::vector<cv::DMatch>> knnMatches;
+            matcher->knnMatch(prevFrame->descriptors_, currFrame->descriptors_, knnMatches, 2);
+            std::cout << "KNN Matches: " << knnMatches.size() << std::endl;
             delete prevFrame;
         }
         
