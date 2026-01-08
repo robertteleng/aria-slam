@@ -5,7 +5,6 @@
 const float LOWE_RATIO = 0.75f;
 const int MIN_MATCHES = 20;
 
-// Camera intrinsics (placeholder)
 const double fx = 718.856, fy = 718.856, cx = 607.1928, cy = 185.2157;
 
 std::vector<cv::DMatch> filterMatches(const std::vector<std::vector<cv::DMatch>>& knnMatches) {
@@ -16,6 +15,17 @@ std::vector<cv::DMatch> filterMatches(const std::vector<std::vector<cv::DMatch>>
         }
     }
     return goodMatches;
+}
+
+void extractMatchedPoints(const std::vector<cv::DMatch>& matches,
+                          const std::vector<cv::KeyPoint>& kp1,
+                          const std::vector<cv::KeyPoint>& kp2,
+                          std::vector<cv::Point2f>& pts1,
+                          std::vector<cv::Point2f>& pts2) {
+    for (const auto& m : matches) {
+        pts1.push_back(kp1[m.queryIdx].pt);
+        pts2.push_back(kp2[m.trainIdx].pt);
+    }
 }
 
 int main(int argc, char** argv) {
@@ -49,7 +59,9 @@ int main(int argc, char** argv) {
             auto goodMatches = filterMatches(knnMatches);
             
             if (goodMatches.size() >= MIN_MATCHES) {
-                std::cout << "[" << frameCount << "] Good matches: " << goodMatches.size() << std::endl;
+                std::vector<cv::Point2f> pts1, pts2;
+                extractMatchedPoints(goodMatches, prevFrame->keypoints_, currFrame->keypoints_, pts1, pts2);
+                std::cout << "[" << frameCount << "] Matched points: " << pts1.size() << std::endl;
             }
             
             delete prevFrame;
