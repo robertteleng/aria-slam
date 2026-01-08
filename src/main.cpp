@@ -14,13 +14,25 @@ int main(int argc, char** argv) {
         return 1;
     }
     
+    cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_HAMMING);
+    
     cv::Mat img;
+    Frame* prevFrame = nullptr;
+    
     while (cap.read(img)) {
-        Frame frame(img);
-        frame.extractFeatures();
+        Frame* currFrame = new Frame(img);
+        currFrame->extractFeatures();
         
-        std::cout << "Extracted " << frame.keypoints_.size() << " keypoints" << std::endl;
+        if (prevFrame != nullptr) {
+            std::vector<cv::DMatch> matches;
+            matcher->match(prevFrame->descriptors_, currFrame->descriptors_, matches);
+            std::cout << "Matches: " << matches.size() << std::endl;
+            delete prevFrame;
+        }
+        
+        prevFrame = currFrame;
     }
     
+    delete prevFrame;
     return 0;
 }
