@@ -1,5 +1,6 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include "Frame.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -13,6 +14,13 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    std::cout << "Video opened successfully" << std::endl;
+    cv::Mat img;
+    while (cap.read(img)) {
+        Frame frame(img);
+        frame.extractFeatures();
+        
+        std::cout << "Extracted " << frame.keypoints_.size() << " keypoints" << std::endl;
+    }
+    
     return 0;
 }
