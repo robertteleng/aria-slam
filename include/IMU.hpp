@@ -7,11 +7,18 @@ struct IMUData {
     Eigen::Vector3d gyro;
 };
 
-class IMU {
+class EKF15State {
 public:
-    IMU();
-    void predict(const IMUData& data, double dt);
+    EKF15State();
     
-    Eigen::Vector3d position_;
-    Eigen::Vector3d velocity_;
+    void predict(const IMUData& data, double dt);
+    void updateVO(const Eigen::Vector3d& position, const Eigen::Matrix3d& R);
+    
+    // State: [position(3), velocity(3), orientation(4), accel_bias(3), gyro_bias(3)] = 15+1
+    Eigen::Matrix<double, 16, 1> state_;
+    Eigen::Matrix<double, 15, 15> P_; // Covariance
+    
+    Eigen::Vector3d getPosition() const;
+    Eigen::Vector3d getVelocity() const;
+    Eigen::Quaterniond getOrientation() const;
 };
