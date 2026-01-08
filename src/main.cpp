@@ -3,6 +3,7 @@
 #include "Frame.hpp"
 
 const float LOWE_RATIO = 0.75f;
+const int MIN_MATCHES = 20;
 
 std::vector<cv::DMatch> filterMatches(const std::vector<std::vector<cv::DMatch>>& knnMatches) {
     std::vector<cv::DMatch> goodMatches;
@@ -30,6 +31,7 @@ int main(int argc, char** argv) {
     
     cv::Mat img;
     Frame* prevFrame = nullptr;
+    int frameCount = 0;
     
     while (cap.read(img)) {
         Frame* currFrame = new Frame(img);
@@ -40,12 +42,18 @@ int main(int argc, char** argv) {
             matcher->knnMatch(prevFrame->descriptors_, currFrame->descriptors_, knnMatches, 2);
             
             auto goodMatches = filterMatches(knnMatches);
-            std::cout << "Good matches: " << goodMatches.size() << " / " << knnMatches.size() << std::endl;
+            
+            if (goodMatches.size() >= MIN_MATCHES) {
+                std::cout << "[" << frameCount << "] Good matches: " << goodMatches.size() << std::endl;
+            } else {
+                std::cout << "[" << frameCount << "] Insufficient matches: " << goodMatches.size() << std::endl;
+            }
             
             delete prevFrame;
         }
         
         prevFrame = currFrame;
+        frameCount++;
     }
     
     delete prevFrame;
