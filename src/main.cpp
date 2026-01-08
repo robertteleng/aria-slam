@@ -30,24 +30,44 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    // Create CUDA streams for parallel execution
+    // Create CUDA streams
     cv::cuda::Stream streamORB, streamYOLO;
     cudaStream_t yoloStream;
     cudaStreamCreate(&yoloStream);
     
-    std::cout << "CUDA streams created for parallel ORB + YOLO" << std::endl;
+    std::unique_ptr<TRTInference> yolo;
+    if (argc >= 3) {
+        yolo = std::make_unique<TRTInference>(argv[2]);
+    }
     
     cv::Mat K = (cv::Mat_<double>(3,3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
     cv::Point2d pp(cx, cy);
     
     cv::Mat img;
     while (cap.read(img)) {
-        Frame frame(img);
+        Frame frame(img, streamORB);
         
-        // TODO: launch ORB and YOLO in parallel streams
-        frame.extractFeatures();
+        // Launch ORB async
+        frame.uploadToGPU(streamORB);
+        frame.extractFeaturesAsync(streamORB);
         
-        std::cout << "Features: " << frame.keypoints_.size() << std::endl;
+        // Launch YOLO async in parallel
+        if (yolo) {
+            yolo->detectAsync(img, yoloStream);
+        }
+        
+        // Sync both streams
+        streamORB.waitForCompletion();
+        cudaStreamSynchronize(yoloStream);
+        
+        frame.downloadResults();
+        std::vector<Detection> detections;
+        if (yolo) {
+            detections = yolo->getResults();
+        }
+        
+        std::cout << "Features: " << frame.keypoints_.size() 
+                  << " Detections: " << detections.size() << std::endl;
     }
     
     cudaStreamDestroy(yoloStream);
