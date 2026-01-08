@@ -41,6 +41,7 @@ int main(int argc, char** argv) {
     }
     
     cv::Mat K = (cv::Mat_<double>(3,3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+    cv::Point2d pp(cx, cy);
     
     cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_HAMMING);
     
@@ -61,7 +62,11 @@ int main(int argc, char** argv) {
             if (goodMatches.size() >= MIN_MATCHES) {
                 std::vector<cv::Point2f> pts1, pts2;
                 extractMatchedPoints(goodMatches, prevFrame->keypoints_, currFrame->keypoints_, pts1, pts2);
-                std::cout << "[" << frameCount << "] Matched points: " << pts1.size() << std::endl;
+                
+                cv::Mat E, mask;
+                E = cv::findEssentialMat(pts1, pts2, fx, pp, cv::RANSAC, 0.999, 1.0, mask);
+                
+                std::cout << "[" << frameCount << "] Essential matrix computed" << std::endl;
             }
             
             delete prevFrame;
