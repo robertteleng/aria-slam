@@ -5,6 +5,9 @@
 const float LOWE_RATIO = 0.75f;
 const int MIN_MATCHES = 20;
 
+// Camera intrinsics (placeholder)
+const double fx = 718.856, fy = 718.856, cx = 607.1928, cy = 185.2157;
+
 std::vector<cv::DMatch> filterMatches(const std::vector<std::vector<cv::DMatch>>& knnMatches) {
     std::vector<cv::DMatch> goodMatches;
     for (const auto& knn : knnMatches) {
@@ -27,6 +30,8 @@ int main(int argc, char** argv) {
         return 1;
     }
     
+    cv::Mat K = (cv::Mat_<double>(3,3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+    
     cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_HAMMING);
     
     cv::Mat img;
@@ -45,8 +50,6 @@ int main(int argc, char** argv) {
             
             if (goodMatches.size() >= MIN_MATCHES) {
                 std::cout << "[" << frameCount << "] Good matches: " << goodMatches.size() << std::endl;
-            } else {
-                std::cout << "[" << frameCount << "] Insufficient matches: " << goodMatches.size() << std::endl;
             }
             
             delete prevFrame;
