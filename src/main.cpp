@@ -49,6 +49,9 @@ int main(int argc, char** argv) {
     Frame* prevFrame = nullptr;
     int frameCount = 0;
     
+    cv::Mat R_total = cv::Mat::eye(3, 3, CV_64F);
+    cv::Mat t_total = cv::Mat::zeros(3, 1, CV_64F);
+    
     while (cap.read(img)) {
         Frame* currFrame = new Frame(img);
         currFrame->extractFeatures();
@@ -66,7 +69,16 @@ int main(int argc, char** argv) {
                 cv::Mat E, mask;
                 E = cv::findEssentialMat(pts1, pts2, fx, pp, cv::RANSAC, 0.999, 1.0, mask);
                 
-                std::cout << "[" << frameCount << "] Essential matrix computed" << std::endl;
+                cv::Mat R, t;
+                int inliers = cv::recoverPose(E, pts1, pts2, R, t, fx, pp, mask);
+                
+                t_total = t_total + R_total * t;
+                R_total = R * R_total;
+                
+                std::cout << "[" << frameCount << "] Position: " 
+                          << t_total.at<double>(0) << ", "
+                          << t_total.at<double>(1) << ", "
+                          << t_total.at<double>(2) << std::endl;
             }
             
             delete prevFrame;
