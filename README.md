@@ -791,17 +791,20 @@ make -j8 && make install
 export OpenCV_DIR=~/libs/opencv_cuda
 ```
 
-> **Note:** Change `CUDA_ARCH_BIN=7.5` according to your GPU:
+> **Note:** Change `CUDA_ARCH_BIN` according to your GPU:
 > - RTX 2060/2070/2080: 7.5
 > - RTX 3060/3070/3080: 8.6
 > - RTX 4060/4070/4080: 8.9
-> - RTX 5070/5080/5090: 10.0
+> - RTX 5060 Ti/5070/5080/5090 (Blackwell): 12.0 - **See [Blackwell Setup Guide](docs/BLACKWELL_SETUP.md)**
 
 ### TensorRT (Installation)
+
+> **RTX 50 Series (Blackwell) users:** Standard TensorRT does NOT support SM 120. You must use **TensorRT-RTX** instead. See [Blackwell Setup Guide](docs/BLACKWELL_SETUP.md).
 
 ```bash
 # Download TensorRT 10.x from NVIDIA (requires account)
 # https://developer.nvidia.com/tensorrt/download
+# For Blackwell GPUs: Download TensorRT-RTX instead
 
 # Extract
 cd ~/libs
