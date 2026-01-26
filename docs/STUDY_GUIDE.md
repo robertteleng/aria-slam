@@ -186,7 +186,7 @@ TensorRT Engine (.engine)  <-- Optimizado para tu GPU especifica
 ### En aria-slam:
 ```cpp
 // Cargar engine
-TRTInference yolo("yolov12s.engine");
+TRTInference yolo("yolo26s.engine");
 
 // Inferencia
 auto detections = yolo.detect(frame, 0.5f, 0.45f);

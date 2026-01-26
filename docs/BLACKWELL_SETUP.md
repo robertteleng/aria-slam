@@ -143,8 +143,8 @@ or engine loads but inference produces garbage/crashes.
 ```bash
 # Use trtexec from TensorRT-RTX
 ~/libs/TensorRT-RTX-1.3.0.35/bin/trtexec \
-    --onnx=models/yolov12s.onnx \
-    --saveEngine=models/yolov12s.engine \
+    --onnx=models/yolo26s.onnx \
+    --saveEngine=models/yolo26s.engine \
     --fp16
 
 # Expected output:

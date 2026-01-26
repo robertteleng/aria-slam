@@ -53,7 +53,7 @@
 ```
 
 **Uso en el proyecto:**
-- Detección de objetos YOLOv12s
+- Detección de objetos YOLO26s
 - Gestión de modelo (`IRuntime`, `ICudaEngine`, `IExecutionContext`)
 - Ejecución asíncrona (`enqueueV3`)
 - Logging personalizado (`ILogger`)
@@ -61,7 +61,7 @@
 **Configuración:**
 ```cpp
 // TRTInference.cpp:14
-engine_path: "../models/yolov12s.engine"
+engine_path: "../models/yolo26s.engine"
 input_size: 640x640 (típico YOLO)
 output_size: [1, 84, 8400] (4 coords + 80 classes)
 ```

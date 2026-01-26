@@ -9,7 +9,8 @@ The architecture is inspired by professional UAV navigation systems (DJI, PX4) a
 - **Sensor Fusion:** 15-state EKF combining IMU (200Hz) + VO (30Hz)
 - **Loop Closure:** g2o pose graph optimization with RANSAC verification
 - **3D Mapping:** Triangulation with outlier filtering, PLY/PCD export
-- **Object Detection:** YOLOv12s via TensorRT (~5ms inference)
+- **Object Detection:** YOLO26s via TensorRT (~2.4ms inference)
+- **Dynamic Object Filtering:** Exclude features on moving objects (people, cars, etc.)
 - **VLM Integration:** Scene understanding via [aria-scene](https://github.com/robertteleng/aria-scene) (FastVLM + FastViT)
 - **Obstacle Avoidance:** Depth-based alerts with spatial audio (planned)
 
@@ -563,7 +564,7 @@ flowchart LR
 | H3 | Feature Matching | BFMatcher, ratio test | ✅ |
 | H4 | Pose Estimation | Essential matrix, trajectory | ✅ |
 | H5 | OpenCV CUDA | GpuMat, GPU ORB, GPU Matcher, smart pointers | ✅ |
-| H6 | TensorRT | YOLOv12s object detection | ✅ |
+| H6 | TensorRT | YOLO26s object detection | ✅ |
 | H7 | Aria Integration | Aria SDK, sensor capture | ⏳ Hardware |
 | H8 | Sensor Fusion | EKF 15-state, IMU + VO fusion | ✅ |
 | H9 | Loop Closure | g2o pose graph optimization | ✅ |
@@ -669,7 +670,7 @@ aria-slam/
 ├── datasets/
 │   └── MH_01_easy/            # EuRoC sequences
 ├── models/
-│   └── yolov12s.engine        # YOLOv12s TensorRT engine
+│   └── yolo26s.engine        # YOLO26s TensorRT engine
 └── build/
 ```
 
@@ -814,9 +815,11 @@ tar -xzf TensorRT-10.7.0.23.Linux.x86_64-gnu.cuda-12.6.tar.gz
 export LD_LIBRARY_PATH=~/libs/TensorRT-10.7.0.23/lib:$LD_LIBRARY_PATH
 export PATH=~/libs/TensorRT-10.7.0.23/bin:$PATH
 
-# Convert YOLO model to TensorRT engine
-trtexec --onnx=models/yolov12s.onnx --saveEngine=models/yolov12s.engine --fp16
+# Generate TensorRT engine for your GPU (auto-detects architecture)
+./scripts/generate_engine.sh yolo26s
 ```
+
+> **Note:** TensorRT engines are GPU-specific. Run this script on each machine.
 
 ### Verify Installation
 
@@ -916,7 +919,7 @@ export LIBGL_ALWAYS_SOFTWARE=1
 | FPS (ORB + YOLO sequential) | ~73 | Before H11 |
 | FPS (ORB + YOLO parallel) | ~80 | After H11 CUDA Streams (+10%) |
 | GPU Usage | ~500MB VRAM | ORB + YOLO |
-| YOLO Inference | ~5ms | YOLOv12s TensorRT FP16 |
+| YOLO Inference | ~2.4ms | YOLO26s TensorRT |
 | ORB Extraction | ~10ms | GPU accelerated |
 | EKF Update | <1ms | 15-state fusion |
 

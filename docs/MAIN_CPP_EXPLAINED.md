@@ -70,7 +70,7 @@ cv::Ptr<cv::cuda::DescriptorMatcher> matcher =
 // YOLO con TensorRT
 std::unique_ptr<TRTInference> yolo;
 try {
-    yolo = std::make_unique<TRTInference>("../models/yolov12s.engine");
+    yolo = std::make_unique<TRTInference>("../models/yolo26s.engine");
 } catch (const std::exception& e) {
     std::cerr << "Warning: YOLO disabled - " << e.what() << std::endl;
 }
