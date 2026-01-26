@@ -17,12 +17,37 @@
 
 #include <iostream>
 #include <memory>
+#include <set>
 #include <opencv2/opencv.hpp>
 #include <opencv2/cudafeatures2d.hpp>
 #include <cuda_runtime_api.h>
 #include <chrono>
 #include "Frame.hpp"
 #include "TRTInference.hpp"
+
+// Dynamic object classes to filter (COCO IDs)
+const std::set<int> DYNAMIC_CLASSES = {
+    0,   // person
+    1,   // bicycle
+    2,   // car
+    3,   // motorcycle
+    5,   // bus
+    6,   // train
+    7,   // truck
+    14,  // bird
+    15,  // cat
+    16,  // dog
+};
+
+// Check if keypoint is inside any dynamic object bounding box
+bool isInDynamicObject(const cv::Point2f& pt, const std::vector<Detection>& detections) {
+    for (const auto& det : detections) {
+        if (DYNAMIC_CLASSES.count(det.class_id) && det.box.contains(pt)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // COCO class names for visualization
 const std::vector<std::string> COCO_CLASSES = {
@@ -40,8 +65,9 @@ const std::vector<std::string> COCO_CLASSES = {
     "toothbrush"
 };
 
-int main() {
-    std::cout << "Aria SLAM (CUDA + TensorRT)" << std::endl;
+int main(int argc, char** argv) {
+    bool headless = (argc > 1 && std::string(argv[1]) == "--headless");
+    std::cout << "Aria SLAM (CUDA + TensorRT)" << (headless ? " [headless]" : "") << std::endl;
 
     // Verify CUDA is available
     int cuda_devices = cv::cuda::getCudaEnabledDeviceCount();
@@ -66,7 +92,7 @@ int main() {
     // YOLO object detection (TensorRT)
     std::unique_ptr<TRTInference> yolo;
     try {
-        yolo = std::make_unique<TRTInference>("../models/yolov12s.engine");
+        yolo = std::make_unique<TRTInference>("../models/yolo26s.engine");
     } catch (const std::exception& e) {
         std::cerr << "Warning: YOLO disabled - " << e.what() << std::endl;
     }
@@ -124,6 +150,7 @@ int main() {
 
         // Match current frame with previous frame using Lowe's ratio test (GPU)
         std::vector<cv::DMatch> good_matches;
+        int filtered_count = 0;
         if (prev_frame &&
             !prev_frame->gpu_descriptors.empty() &&
             !current_frame.gpu_descriptors.empty()) {
@@ -133,7 +160,14 @@ int main() {
 
             for (auto& knn : knn_matches) {
                 if (knn.size() >= 2 && knn[0].distance < 0.75 * knn[1].distance) {
-                    good_matches.push_back(knn[0]);
+                    // Filter out keypoints on dynamic objects
+                    cv::Point2f pt1 = prev_frame->keypoints[knn[0].queryIdx].pt;
+                    cv::Point2f pt2 = current_frame.keypoints[knn[0].trainIdx].pt;
+                    if (!isInDynamicObject(pt1, detections) && !isInDynamicObject(pt2, detections)) {
+                        good_matches.push_back(knn[0]);
+                    } else {
+                        filtered_count++;
+                    }
                 }
             }
         }
@@ -163,48 +197,63 @@ int main() {
             cv::circle(trajectory, cv::Point(x, y), 2, cv::Scalar(0, 255, 0), -1);
         }
 
-        cv::namedWindow("Trajectory", cv::WINDOW_NORMAL);
-        cv::imshow("Trajectory", trajectory);
-
-        // Visualization: draw matches or keypoints
-        cv::Mat display;
-        if (prev_frame && !good_matches.empty()) {
-            cv::drawMatches(prev_frame->image, prev_frame->keypoints,
-                           current_frame.image, current_frame.keypoints,
-                           good_matches, display);
-        } else {
-            cv::drawKeypoints(current_frame.image, current_frame.keypoints,
-                             display, cv::Scalar(0, 255, 0));
-        }
-
-        // Draw YOLO detections
-        for (const auto& det : detections) {
-            cv::rectangle(display, det.box, cv::Scalar(0, 0, 255), 2);
-            std::string label = COCO_CLASSES[det.class_id] + " " +
-                               std::to_string((int)(det.confidence * 100)) + "%";
-            cv::putText(display, label, cv::Point(det.box.x, det.box.y - 5),
-                       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
-        }
-
         // Store current frame for next iteration
         prev_frame = std::make_unique<Frame>(current_frame);
 
-        // Calculate and display FPS
+        // Calculate FPS
         auto t2 = std::chrono::high_resolution_clock::now();
         double ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
-        cv::putText(display, "FPS: " + std::to_string((int)(1000.0 / ms)),
-                    cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
-        cv::putText(display, "Matches: " + std::to_string(good_matches.size()),
-                    cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
-        cv::putText(display, "Objects: " + std::to_string(detections.size()),
-                    cv::Point(10, 90), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 255), 2);
 
-        cv::namedWindow("Aria SLAM", cv::WINDOW_NORMAL);
-        cv::imshow("Aria SLAM", display);
+        if (!headless) {
+            cv::namedWindow("Trajectory", cv::WINDOW_NORMAL);
+            cv::imshow("Trajectory", trajectory);
 
-        // Process window events
-        char key = cv::waitKey(1);
-        if (key == 'q') break;
+            // Visualization: draw matches or keypoints
+            cv::Mat display;
+            if (prev_frame && !good_matches.empty()) {
+                cv::drawMatches(prev_frame->image, prev_frame->keypoints,
+                               current_frame.image, current_frame.keypoints,
+                               good_matches, display);
+            } else {
+                cv::drawKeypoints(current_frame.image, current_frame.keypoints,
+                                 display, cv::Scalar(0, 255, 0));
+            }
+
+            // Draw YOLO detections
+            for (const auto& det : detections) {
+                cv::rectangle(display, det.box, cv::Scalar(0, 0, 255), 2);
+                std::string label = COCO_CLASSES[det.class_id] + " " +
+                                   std::to_string((int)(det.confidence * 100)) + "%";
+                cv::putText(display, label, cv::Point(det.box.x, det.box.y - 5),
+                           cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
+            }
+
+            cv::putText(display, "FPS: " + std::to_string((int)(1000.0 / ms)),
+                        cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
+            cv::putText(display, "Matches: " + std::to_string(good_matches.size()),
+                        cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
+            cv::putText(display, "Objects: " + std::to_string(detections.size()),
+                        cv::Point(10, 90), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 255), 2);
+            cv::putText(display, "Filtered: " + std::to_string(filtered_count),
+                        cv::Point(10, 120), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 165, 255), 2);
+
+            cv::namedWindow("Aria SLAM", cv::WINDOW_NORMAL);
+            cv::imshow("Aria SLAM", display);
+
+            char key = cv::waitKey(1);
+            if (key == 'q') break;
+        } else {
+            // Headless mode: print stats periodically
+            static int frame_count = 0;
+            frame_count++;
+            if (frame_count % 50 == 0) {
+                std::cout << "Frame " << frame_count
+                          << " | FPS: " << (int)(1000.0 / ms)
+                          << " | Matches: " << good_matches.size()
+                          << " | Objects: " << detections.size()
+                          << " | Filtered: " << filtered_count << std::endl;
+            }
+        }
     }
 
     // H11: Cleanup CUDA streams

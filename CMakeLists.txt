@@ -48,6 +48,7 @@ add_executable(euroc_eval
     src/euroc_eval.cpp
     src/EuRoCReader.cpp
     src/Frame.cpp
+    src/TRTInference.cpp
     src/IMU.cpp
     src/LoopClosure.cpp
     src/Mapper.cpp
@@ -56,6 +57,8 @@ add_executable(euroc_eval
 target_link_libraries(euroc_eval
     ${OpenCV_LIBS}
     ${CUDA_LIBRARIES}
+    tensorrt_rtx
+    cudart
     Eigen3::Eigen
     g2o_core
     g2o_stuff

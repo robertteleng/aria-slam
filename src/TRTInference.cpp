@@ -100,39 +100,29 @@ std::vector<Detection> TRTInference::postprocess(float* output, int num_detectio
     std::vector<float> confidences;
     std::vector<int> class_ids;
 
-    // YOLO output format: [batch, num_classes + 4, num_boxes] or [batch, num_boxes, num_classes + 4]
-    // YOLOv12 uses [1, 84, 8400] format (84 = 4 box coords + 80 classes)
-    int num_classes = 80;
-    int num_boxes = 8400;
+    // YOLO26/YOLO11 output format: [1, 300, 6] where each detection is [x1, y1, x2, y2, confidence, class_id]
+    // Coordinates are in input image scale (640x640)
+    int num_boxes = 300;
+    int num_values = 6;
 
     for (int i = 0; i < num_boxes; i++) {
-        // Get box coordinates (first 4 values)
-        float cx = output[0 * num_boxes + i];
-        float cy = output[1 * num_boxes + i];
-        float w = output[2 * num_boxes + i];
-        float h = output[3 * num_boxes + i];
+        float x1 = output[i * num_values + 0];
+        float y1 = output[i * num_values + 1];
+        float x2 = output[i * num_values + 2];
+        float y2 = output[i * num_values + 3];
+        float conf = output[i * num_values + 4];
+        int class_id = (int)output[i * num_values + 5];
 
-        // Find best class
-        float max_conf = 0;
-        int max_class = 0;
-        for (int c = 0; c < num_classes; c++) {
-            float conf = output[(4 + c) * num_boxes + i];
-            if (conf > max_conf) {
-                max_conf = conf;
-                max_class = c;
-            }
-        }
+        if (conf >= conf_thresh) {
+            // Scale coordinates to original image size
+            int bx1 = (int)(x1 * scale_x);
+            int by1 = (int)(y1 * scale_y);
+            int bx2 = (int)(x2 * scale_x);
+            int by2 = (int)(y2 * scale_y);
 
-        if (max_conf >= conf_thresh) {
-            // Convert center format to corner format
-            int x1 = (int)((cx - w / 2) * scale_x);
-            int y1 = (int)((cy - h / 2) * scale_y);
-            int x2 = (int)((cx + w / 2) * scale_x);
-            int y2 = (int)((cy + h / 2) * scale_y);
-
-            boxes.push_back(cv::Rect(x1, y1, x2 - x1, y2 - y1));
-            confidences.push_back(max_conf);
-            class_ids.push_back(max_class);
+            boxes.push_back(cv::Rect(bx1, by1, bx2 - bx1, by2 - by1));
+            confidences.push_back(conf);
+            class_ids.push_back(class_id);
         }
     }
 

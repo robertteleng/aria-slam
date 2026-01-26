@@ -16,11 +16,13 @@
 #include <iomanip>
 #include <opencv2/opencv.hpp>
 #include <opencv2/cudafeatures2d.hpp>
+#include <cuda_runtime.h>
 #include "EuRoCReader.hpp"
 #include "Frame.hpp"
 #include "IMU.hpp"
 #include "LoopClosure.hpp"
 #include "Mapper.hpp"
+#include "TRTInference.hpp"
 
 // Compute Absolute Trajectory Error (ATE)
 double computeATE(const std::vector<Eigen::Vector3d>& estimated,
@@ -87,6 +89,15 @@ int main(int argc, char** argv) {
     cv::Ptr<cv::cuda::DescriptorMatcher> matcher =
         cv::cuda::DescriptorMatcher::createBFMatcher(cv::NORM_HAMMING);
 
+    // CUDA streams for parallel execution
+    cudaStream_t stream_orb, stream_yolo;
+    cudaStreamCreate(&stream_orb);
+    cudaStreamCreate(&stream_yolo);
+
+    // TensorRT YOLO
+    TRTInference yolo("../models/yolo26s.engine");
+    std::cout << "TensorRT YOLO loaded" << std::endl;
+
     SensorFusion fusion;
     // min_frames_between=200, min_score=0.4, min_matches=50
     LoopClosureDetector loop_detector(200, 0.4, 50);
@@ -130,8 +141,23 @@ int main(int argc, char** argv) {
             fusion.addIMU(imu);
         }
 
-        // Extract features
-        Frame current_frame(image, orb);
+        // Extract features + YOLO in parallel
+        Frame current_frame(image, orb, stream_orb);
+
+        // Run YOLO async
+        cv::Mat rgb_image;
+        cv::cvtColor(image, rgb_image, cv::COLOR_GRAY2BGR);
+        yolo.detectAsync(rgb_image, stream_yolo);
+
+        // Sync streams
+        cudaStreamSynchronize(stream_orb);
+        cudaStreamSynchronize(stream_yolo);
+
+        // Download ORB results
+        current_frame.downloadResults();
+
+        // Get YOLO detections
+        auto detections = yolo.getDetections(0.5f, 0.45f);
 
         // Feature matching
         std::vector<cv::DMatch> good_matches;
@@ -277,6 +303,10 @@ int main(int argc, char** argv) {
     std::cout << "\nTrajectory Error:" << std::endl;
     std::cout << "  ATE (RMSE): " << std::setprecision(4) << ate << " m" << std::endl;
     std::cout << "  RPE (RMSE): " << std::setprecision(4) << rpe << " m" << std::endl;
+
+    // Cleanup CUDA streams
+    cudaStreamDestroy(stream_orb);
+    cudaStreamDestroy(stream_yolo);
 
     // Export results
     std::string output_dir = dataset_path + "/results/";
