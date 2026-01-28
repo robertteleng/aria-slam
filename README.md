@@ -326,7 +326,9 @@ sequenceDiagram
 - [Loop Closure Pipeline (H9)](#loop-closure-pipeline-h9)
 - [Mapping Pipeline (H10)](#mapping-pipeline-h10)
 - [CUDA Streams (H11)](#cuda-streams-h11)
-- [VLM Integration (H23)](#vlm-integration-h23)
+- [Clean Architecture (H12)](#clean-architecture-h12)
+- [Multithreading (H13)](#multithreading-h13)
+- [VLM Integration (H25)](#vlm-integration-h25)
 
 ### GPU Pipeline (H5-H6)
 
@@ -512,7 +514,134 @@ auto detections = yolo->getDetections(0.5f, 0.45f);
 
 > See [docs/H11_CUDA_STREAMS_AUDIT.md](docs/H11_CUDA_STREAMS_AUDIT.md) for detailed technical analysis and C++ vs Python comparison.
 
-### VLM Integration (H23)
+### Clean Architecture (H12) ⏳
+
+**Problem:** Current code has tight coupling between components, making it hard to:
+- Test components in isolation
+- Swap implementations (CPU↔GPU, mock↔real)
+- Add multithreading without race conditions
+- Maintain and extend
+
+**Solution:** Hexagonal Architecture (Ports & Adapters) with SOLID principles.
+
+```mermaid
+flowchart TB
+    subgraph Domain["Domain Layer (Pure Logic)"]
+        E[Entities: Frame, MapPoint, Pose]
+        UC[Use Cases: TrackFrame, DetectLoop, Triangulate]
+    end
+
+    subgraph Application["Application Layer (Orchestration)"]
+        SLAM[SlamPipeline]
+        SLAM --> UC
+    end
+
+    subgraph Ports["Ports (Interfaces)"]
+        IFE[IFeatureExtractor]
+        IM[IMatcher]
+        ILD[ILoopDetector]
+        IOD[IObjectDetector]
+        ISF[ISensorFusion]
+    end
+
+    subgraph Adapters["Adapters (Implementations)"]
+        subgraph GPU["GPU Adapters"]
+            ORB_GPU[OrbCudaExtractor]
+            MATCHER_GPU[CudaMatcher]
+            YOLO[YoloTrtDetector]
+        end
+        subgraph CPU["CPU Adapters"]
+            ORB_CPU[OrbCpuExtractor]
+            MATCHER_CPU[BFMatcher]
+        end
+        subgraph Mock["Test Mocks"]
+            MOCK_FE[MockExtractor]
+            MOCK_M[MockMatcher]
+        end
+    end
+
+    UC --> Ports
+    GPU --> Ports
+    CPU --> Ports
+    Mock --> Ports
+```
+
+**SOLID Principles Applied:**
+
+| Principle | Application |
+|-----------|-------------|
+| **S**ingle Responsibility | Each class does one thing (OrbExtractor extracts, Matcher matches) |
+| **O**pen/Closed | Add new detectors without modifying SlamPipeline |
+| **L**iskov Substitution | CudaMatcher and BFMatcher both implement IMatcher |
+| **I**nterface Segregation | Small interfaces (IExtractor, IMatcher) not one giant ISlamComponent |
+| **D**ependency Inversion | SlamPipeline depends on interfaces, not concrete GPU classes |
+
+**Benefits for Jetson Orin Nano:**
+- Inject GPU implementations for production
+- Inject CPU mocks for testing on dev machine
+- Easy to profile and optimize individual components
+
+> See [docs/H12_CLEAN_ARCHITECTURE.md](docs/H12_CLEAN_ARCHITECTURE.md) for detailed design and implementation guide.
+
+### Multithreading (H13) ⏳
+
+**Problem:** Loop closure blocks main pipeline. On Jetson Orin Nano (weak CPU), this kills FPS.
+
+**Solution:** Async pipeline with dedicated threads and lock-free communication.
+
+```mermaid
+flowchart LR
+    subgraph MainThread["Main Thread (30 FPS)"]
+        CAP[Capture] --> FE[Feature Extract]
+        FE --> TRACK[Track]
+        TRACK --> OUT[Output Pose]
+    end
+
+    subgraph LoopThread["Loop Thread (Async)"]
+        KF_Q[KeyFrame Queue] --> LCD[Loop Detect GPU]
+        LCD --> OPT[g2o Optimize]
+        OPT --> CORR[Corrections Queue]
+    end
+
+    subgraph YoloThread["YOLO Thread (Async)"]
+        FRAME_Q[Frame Queue] --> YOLO[YOLO Inference]
+        YOLO --> DET_Q[Detections Queue]
+    end
+
+    TRACK -->|non-blocking| KF_Q
+    CAP -->|non-blocking| FRAME_Q
+    DET_Q -->|poll| TRACK
+    CORR -->|poll| TRACK
+```
+
+**Thread Architecture:**
+
+| Thread | Priority | Purpose | Blocking? |
+|--------|----------|---------|-----------|
+| Main | High | Capture → Track → Output | Never |
+| LoopClosure | Low | Detect loops, optimize graph | Internal only |
+| YOLO | Medium | Object detection for filtering | Internal only |
+| IMU | Realtime | 200Hz sensor fusion | Never |
+
+**Key Techniques:**
+- `std::jthread` with cooperative cancellation
+- Lock-free `moodycamel::ConcurrentQueue` for inter-thread communication
+- `cv::cuda::Stream` per thread to avoid GPU contention
+- Producer-consumer pattern with backpressure
+
+**GPU Resource Management:**
+```cpp
+// Each thread owns its CUDA stream
+class LoopClosureThread {
+    cudaStream_t stream_;           // Dedicated stream
+    cv::cuda::GpuMat gpu_buffer_;   // Pre-allocated GPU memory
+    cv::Ptr<cv::cuda::DescriptorMatcher> matcher_;  // GPU matcher
+};
+```
+
+> See [docs/H13_MULTITHREADING.md](docs/H13_MULTITHREADING.md) for implementation details and benchmarks.
+
+### VLM Integration (H25)
 
 **Goal:** Add scene understanding via Vision Language Models without compromising real-time SLAM performance.
 
@@ -569,34 +698,39 @@ flowchart LR
 | H8 | Sensor Fusion | EKF 15-state, IMU + VO fusion | ✅ |
 | H9 | Loop Closure | g2o pose graph optimization | ✅ |
 | H10 | 3D Mapping | Triangulation, outlier filter, PLY/PCD export | ✅ |
+| H11 | CUDA Streams | ORB + YOLO parallel GPU execution | ✅ |
 
-### Phase 2: Optimization ⏳
+### Phase 2: Architecture & Optimization ⏳
+
+> **Design first, implement second.** Clean Architecture enables testability, maintainability, and proper multithreading.
 
 | Milestone | Name | Description | Status |
 |-----------|------|-------------|--------|
-| H11 | CUDA Streams | ORB + YOLO parallel GPU execution | ✅ |
-| H12 | Multithreading | std::thread, producer/consumer queues | ⏳ |
-| H13 | Depth Estimation | DepthAnything/MiDaS TensorRT, dense mapping | ⏳ |
-| H14 | Configuration | YAML config file for parameters | ⏳ |
+| H12 | Clean Architecture | Hexagonal/Ports-Adapters, SOLID principles, interfaces | ⏳ |
+| H13 | Multithreading | Async pipeline, thread pools, lock-free queues | ⏳ |
+| H14 | GPU LoopClosure | cv::cuda::DescriptorMatcher, async detection thread | ⏳ |
+| H15 | Configuration | YAML config file for parameters | ⏳ |
+| H16 | Testing | GoogleTest unit/integration tests, mocks | ⏳ |
 
 ### Phase 3: Advanced Features ⏳
 
 | Milestone | Name | Description | Status |
 |-----------|------|-------------|--------|
-| H15 | Keyframe Selection | Intelligent keyframe selection for mapping/loop closure | ⏳ |
-| H16 | Stereo Vision | Stereo matching GPU, disparity → depth | ⏳ |
-| H17 | Path Planning | A*/RRT* navigation on 3D map | ⏳ |
-| H18 | Pangolin Visualization | 3D real-time trajectory and map viewer | ⏳ |
-| H19 | Obstacle Avoidance | Depth-based alerts with spatial audio feedback | ⏳ |
+| H17 | Depth Estimation | DepthAnything/MiDaS TensorRT, dense mapping | ⏳ |
+| H18 | Keyframe Selection | Intelligent keyframe selection for mapping/loop closure | ⏳ |
+| H19 | Stereo Vision | Stereo matching GPU, disparity → depth | ⏳ |
+| H20 | Path Planning | A*/RRT* navigation on 3D map | ⏳ |
+| H21 | Pangolin Visualization | 3D real-time trajectory and map viewer | ⏳ |
+| H22 | Obstacle Avoidance | Depth-based alerts with spatial audio feedback | ⏳ |
 
 ### Phase 4: Production ⏳
 
 | Milestone | Name | Description | Status |
 |-----------|------|-------------|--------|
-| H20 | Architecture + Testing | Layer refactor, GoogleTest unit/integration tests | ⏳ |
-| H21 | Docker + Release | Docker container, README + GIF demo | ⏳ |
-| H22 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
-| H23 | VLM Integration | FastVLM scene understanding via ROS2 topics | ⏳ |
+| H23 | Docker + CI/CD | Docker container, GitHub Actions, automated testing | ⏳ |
+| H24 | ROS2 Wrapper | Node pub/sub, sensor_msgs, geometry_msgs | ⏳ |
+| H25 | VLM Integration | FastVLM scene understanding via ROS2 topics | ⏳ |
+| H26 | Documentation | API docs, tutorials, demo GIFs | ⏳ |
 
 ### Visual Progress
 
@@ -616,28 +750,31 @@ gantt
     H8 Fusion          :done, h8, 6, 7
     H9 Loop Closure    :done, h9, 7, 8
     H10 Mapping        :done, h10, 8, 9
-
-    section Phase 2 - Optimization
     H11 CUDA Streams   :done, h11, 9, 10
-    H12 Multithreading :h12, 10, 11
-    H13 Depth          :h13, 11, 12
-    H14 Config         :h14, 12, 13
+
+    section Phase 2 - Architecture
+    H12 Clean Arch     :active, h12, 10, 11
+    H13 Multithreading :h13, 11, 12
+    H14 GPU LoopClose  :h14, 12, 13
+    H15 Config         :h15, 13, 14
+    H16 Testing        :h16, 14, 15
 
     section Phase 3 - Advanced
-    H15 Keyframes      :h15, 13, 14
-    H16 Stereo         :h16, 14, 15
-    H17 Path Planning  :h17, 15, 16
-    H18 Pangolin       :h18, 16, 17
-    H19 Obstacle       :h19, 17, 18
+    H17 Depth          :h17, 15, 16
+    H18 Keyframes      :h18, 16, 17
+    H19 Stereo         :h19, 17, 18
+    H20 Path Planning  :h20, 18, 19
+    H21 Pangolin       :h21, 19, 20
+    H22 Obstacle       :h22, 20, 21
 
     section Phase 4 - Production
-    H20 Architecture   :h20, 18, 19
-    H21 Docker         :h21, 19, 20
-    H22 ROS2           :h22, 20, 21
-    H23 VLM            :h23, 21, 22
+    H23 Docker         :h23, 21, 22
+    H24 ROS2           :h24, 22, 23
+    H25 VLM            :h25, 23, 24
+    H26 Docs           :h26, 24, 25
 
     section Hardware
-    H7 Aria            :h7, 21, 22
+    H7 Aria            :h7, 24, 25
 ```
 
 ---
@@ -674,41 +811,60 @@ aria-slam/
 └── build/
 ```
 
-### Future Structure (H19 Refactor)
+### Target Structure (H12 Clean Architecture)
 
 ```
 aria-slam/
 ├── CMakeLists.txt
 ├── README.md
-├── config.yaml                # Configuration (H14)
-├── Dockerfile                 # Container (H20)
+├── config/
+│   └── default.yaml           # Configuration (H15)
 ├── include/
-│   ├── hardware/
-│   │   ├── Camera.hpp
-│   │   ├── IMUSensor.hpp
-│   │   └── EuRoCReader.hpp
-│   ├── perception/
-│   │   ├── ORBExtractor.hpp
-│   │   ├── FeatureMatcher.hpp
-│   │   ├── YOLODetector.hpp
-│   │   └── LoopDetector.hpp
-│   ├── fusion/
-│   │   ├── EKF.hpp
-│   │   └── PoseGraph.hpp
-│   ├── mapping/
-│   │   ├── Triangulator.hpp
-│   │   └── MapExporter.hpp
-│   └── pipeline/
-│       └── SlamPipeline.hpp
+│   ├── core/                  # Domain entities
+│   │   ├── Frame.hpp
+│   │   ├── MapPoint.hpp
+│   │   ├── KeyFrame.hpp
+│   │   └── Pose.hpp
+│   ├── interfaces/            # Ports (abstractions)
+│   │   ├── IFeatureExtractor.hpp
+│   │   ├── IMatcher.hpp
+│   │   ├── ILoopDetector.hpp
+│   │   ├── IObjectDetector.hpp
+│   │   ├── ISensorFusion.hpp
+│   │   └── IMapper.hpp
+│   ├── adapters/              # Implementations
+│   │   ├── gpu/
+│   │   │   ├── OrbCudaExtractor.hpp
+│   │   │   ├── CudaMatcher.hpp
+│   │   │   └── YoloTrtDetector.hpp
+│   │   ├── cpu/
+│   │   │   ├── OrbCpuExtractor.hpp
+│   │   │   └── BruteForceMatcher.hpp
+│   │   └── sensors/
+│   │       ├── EuRoCReader.hpp
+│   │       └── AriaReader.hpp
+│   ├── pipeline/              # Application layer
+│   │   ├── SlamPipeline.hpp
+│   │   ├── LoopClosureThread.hpp
+│   │   └── ThreadPool.hpp
+│   └── utils/
+│       ├── Config.hpp
+│       └── Logger.hpp
 ├── src/
-│   └── ...
-├── tests/                     # H19 testing
+│   ├── core/
+│   ├── adapters/
+│   ├── pipeline/
+│   └── main.cpp
+├── tests/                     # H16 Testing
 │   ├── unit/
-│   │   ├── test_ekf.cpp
-│   │   ├── test_orb.cpp
-│   │   └── test_triangulation.cpp
-│   └── integration/
-│       └── test_pipeline.cpp
+│   ├── integration/
+│   └── mocks/
+│       ├── MockExtractor.hpp
+│       └── MockMatcher.hpp
+├── scripts/
+│   ├── setup_machine.sh
+│   └── generate_engine.sh
+├── docs/
 ├── datasets/
 ├── models/
 └── build/
@@ -729,10 +885,10 @@ aria-slam/
 | TensorRT | >= 10.0 | Deep learning inference |
 | Eigen | >= 3.3 | Linear algebra |
 | g2o | - | Graph optimization |
-| yaml-cpp | - | Configuration (H14) |
-| Pangolin | - | 3D visualization (H17) |
-| GTest | - | Testing (H19) |
-| ROS2 Humble | - | Robot integration (H21) |
+| yaml-cpp | - | Configuration (H15) |
+| Pangolin | - | 3D visualization (H21) |
+| GTest | - | Testing (H16) |
+| ROS2 Humble | - | Robot integration (H24) |
 
 ### Ubuntu Installation
 

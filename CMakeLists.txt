@@ -2,13 +2,13 @@ cmake_minimum_required(VERSION 3.16)
 project(aria_slam)
 
 set(CMAKE_CXX_STANDARD 17)
-set(OpenCV_DIR "/home/robert/libs/opencv_cuda/lib/cmake/opencv4")
+set(OpenCV_DIR "/home/roberto/libs/opencv_cuda/lib/cmake/opencv4")
 find_package(OpenCV REQUIRED)
 find_package(CUDA REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-# TensorRT-RTX (for Blackwell support)
-set(TensorRT_DIR "/home/robert/libs/TensorRT-RTX-1.3.0.35")
+# TensorRT (10.7.0) for NVIDIA GeForce RTX 2060 (SM 75)
+set(TensorRT_DIR "/home/roberto/libs/TensorRT-10.7.0.23")
 set(TensorRT_INCLUDE_DIRS "${TensorRT_DIR}/include")
 set(TensorRT_LIBS "${TensorRT_DIR}/lib")
 
@@ -34,7 +34,7 @@ add_executable(aria_slam
 target_link_libraries(aria_slam
     ${OpenCV_LIBS}
     ${CUDA_LIBRARIES}
-    tensorrt_rtx
+    nvinfer
     cudart
     Eigen3::Eigen
     g2o_core
@@ -57,7 +57,7 @@ add_executable(euroc_eval
 target_link_libraries(euroc_eval
     ${OpenCV_LIBS}
     ${CUDA_LIBRARIES}
-    tensorrt_rtx
+    nvinfer
     cudart
     Eigen3::Eigen
     g2o_core
