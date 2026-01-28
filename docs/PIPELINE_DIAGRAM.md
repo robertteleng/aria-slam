@@ -1,13 +1,51 @@
 # Diagrama del Pipeline aria-slam
 
-## Vista General (30,000 pies)
+**Actualizado:** H01-H14 completados
+
+---
+
+## Vista General
 
 ```
-+-------+     +-------+     +-------+     +-------+
-| Video | --> | Frame | --> | Match | --> | Pose  | --> Trayectoria
-+-------+     +-------+     +-------+     +-------+
-                 |
-                 +--> YOLO --> Detecciones
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           ARIA-SLAM PIPELINE                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────┐    ┌─────────────────────────────────────────────────────┐    │
+│  │  Video  │───>│              PARALLEL GPU PROCESSING                │    │
+│  │  Input  │    │  ┌─────────────┐         ┌─────────────┐            │    │
+│  └─────────┘    │  │ Stream 1    │         │ Stream 2    │            │    │
+│                 │  │ ORB CUDA    │         │ YOLO TRT    │            │    │
+│                 │  │ (features)  │         │ (objects)   │            │    │
+│                 │  └──────┬──────┘         └──────┬──────┘            │    │
+│                 └─────────┼───────────────────────┼───────────────────┘    │
+│                           │                       │                         │
+│                           └───────────┬───────────┘                         │
+│                                       ▼                                     │
+│                         ┌─────────────────────────┐                         │
+│                         │   DYNAMIC FILTERING     │                         │
+│                         │ (remove features on     │                         │
+│                         │  moving objects)        │                         │
+│                         └────────────┬────────────┘                         │
+│                                      ▼                                      │
+│                         ┌─────────────────────────┐                         │
+│                         │      MATCHING           │                         │
+│                         │  (GPU BFMatcher +       │                         │
+│                         │   Lowe's ratio test)    │                         │
+│                         └────────────┬────────────┘                         │
+│                                      ▼                                      │
+│                         ┌─────────────────────────┐                         │
+│                         │   POSE ESTIMATION       │                         │
+│                         │  (Essential Matrix +    │                         │
+│                         │   RANSAC)               │                         │
+│                         └────────────┬────────────┘                         │
+│                                      ▼                                      │
+│                         ┌─────────────────────────┐                         │
+│                         │   TRAJECTORY            │──────> Visualization    │
+│                         │   ACCUMULATION          │                         │
+│                         └─────────────────────────┘                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -16,65 +54,101 @@
 
 ```
 ================================================================================
-                              FRAME N (entrada)
+                           FRAME N (entrada)
 ================================================================================
 
-                              +-------------+
-                              |   cv::Mat   |
-                              |    frame    |
-                              +------+------+
-                                     |
-         +---------------------------+---------------------------+
-         |                                                       |
-         v                                                       v
-+------------------+                                   +------------------+
-|  CUDA STREAM 1   |                                   |  CUDA STREAM 2   |
-|    (stream_orb)  |                                   |   (stream_yolo)  |
-+------------------+                                   +------------------+
-         |                                                       |
-         v                                                       v
-+------------------+                                   +------------------+
-|  Frame::Frame()  |                                   | yolo->detectAsync|
-+------------------+                                   +------------------+
-         |                                                       |
-         v                                                       v
-+------------------+                                   +------------------+
-| 1. BGR -> Gray   |                                   | 1. Resize 640x640|
-| 2. CPU -> GPU    |                                   | 2. BGR -> RGB    |
-| 3. ORB detect    |                                   | 3. Normalize 0-1 |
-|    (async)       |                                   | 4. HWC -> CHW    |
-+------------------+                                   | 5. CPU -> GPU    |
-         |                                             | 6. TRT inference |
-         |                                             |    (async)       |
-         |                                             | 7. GPU -> CPU    |
-         |                                             +------------------+
-         |                                                       |
-         +---------------------------+---------------------------+
-                                     |
-                                     v
-                        +------------------------+
-                        | cudaStreamSynchronize  |
-                        |   (esperar ambos)      |
-                        +------------------------+
-                                     |
-         +---------------------------+---------------------------+
-         |                                                       |
-         v                                                       v
-+------------------+                                   +------------------+
-| downloadResults()|                                   | getDetections()  |
-+------------------+                                   +------------------+
-         |                                                       |
-         v                                                       v
-+------------------+                                   +------------------+
-| - keypoints[]    |                                   | - Detection[]    |
-| - descriptors    |                                   |   - box (x,y,w,h)|
-| - gpu_descriptors|                                   |   - confidence   |
-+------------------+                                   |   - class_id     |
-                                                       +------------------+
+                           +-------------+
+                           |   cv::Mat   |
+                           |    frame    |
+                           +------+------+
+                                  |
+         +------------------------+------------------------+
+         |                                                 |
+         v                                                 v
++------------------+                             +------------------+
+|  CUDA STREAM 1   |                             |  CUDA STREAM 2   |
+|   (stream_orb)   |                             |   (stream_yolo)  |
++------------------+                             +------------------+
+         |                                                 |
+         v                                                 v
++------------------+                             +------------------+
+|  Frame::Frame()  |                             | yolo->detectAsync|
++------------------+                             +------------------+
+         |                                                 |
+         v                                                 v
++------------------+                             +------------------+
+| 1. BGR -> Gray   |                             | 1. Resize 640x640|
+| 2. CPU -> GPU    |                             | 2. BGR -> RGB    |
+| 3. ORB detect    |                             | 3. Normalize 0-1 |
+|    (async)       |                             | 4. HWC -> CHW    |
++------------------+                             | 5. CPU -> GPU    |
+         |                                       | 6. TRT inference |
+         |                                       |    (async)       |
+         |                                       | 7. GPU -> CPU    |
+         |                                       +------------------+
+         |                                                 |
+         +------------------------+------------------------+
+                                  |
+                                  v
+                     +------------------------+
+                     | cudaStreamSynchronize  |
+                     |   (esperar ambos)      |
+                     +------------------------+
+                                  |
+         +------------------------+------------------------+
+         |                                                 |
+         v                                                 v
++------------------+                             +------------------+
+| downloadResults()|                             | getDetections()  |
++------------------+                             +------------------+
+         |                                                 |
+         v                                                 v
++------------------+                             +------------------+
+| - keypoints[]    |                             | - Detection[]    |
+| - descriptors    |                             |   - box (x,y,w,h)|
+| - gpu_descriptors|                             |   - confidence   |
++------------------+                             |   - class_id     |
+                                                 +------------------+
 
 
 ================================================================================
-                              MATCHING (si hay frame previo)
+                     DYNAMIC OBJECT FILTERING (H06)
+================================================================================
+
++------------------+      +------------------+
+|    keypoints     |      |   detections     |
+|    (features)    |      | (YOLO bboxes)    |
++--------+---------+      +---------+--------+
+         |                          |
+         +------------+-------------+
+                      |
+                      v
+             +------------------+
+             | isInDynamicObject|
+             |                  |
+             | DYNAMIC_CLASSES: |
+             | - person (0)     |
+             | - bicycle (1)    |
+             | - car (2)        |
+             | - motorcycle (3) |
+             | - bus (5)        |
+             | - truck (7)      |
+             | - bird (14)      |
+             | - cat (15)       |
+             | - dog (16)       |
+             +--------+---------+
+                      |
+         +------------+-------------+
+         |                          |
+         v                          v
++------------------+      +------------------+
+|  STATIC features |      | FILTERED features|
+|  (used for pose) |      |  (discarded)     |
++------------------+      +------------------+
+
+
+================================================================================
+                         MATCHING (si hay frame previo)
 ================================================================================
 
     Frame N-1                                    Frame N
@@ -103,7 +177,7 @@
 
 
 ================================================================================
-                              POSE ESTIMATION (si matches >= 8)
+                         POSE ESTIMATION (si matches >= 8)
 ================================================================================
 
 +------------------+     +------------------+
@@ -148,7 +222,7 @@
 
 
 ================================================================================
-                              POSE ACCUMULATION
+                           POSE ACCUMULATION
 ================================================================================
 
 Estado anterior:                 Movimiento relativo:
@@ -176,19 +250,18 @@ Estado anterior:                 Movimiento relativo:
 
 
 ================================================================================
-                              VISUALIZACION
+                           VISUALIZACION
 ================================================================================
 
 +------------------+     +------------------+     +------------------+
-|    Trajectory    |     |     Display      |     |       FPS        |
+|    Trajectory    |     |     Display      |     |    Estadisticas  |
 |                  |     |                  |     |                  |
 |  o               |     | +--[person]--+   |     |  FPS: 80         |
-|   o              |     | |            |   |     |  Matches: 245    |
+|   o              |     | |  FILTERED  |   |     |  Matches: 245    |
 |    o             |     | +------------+   |     |  Objects: 3      |
-|     o  <- pos    |     |    * * *         |     |                  |
+|     o  <- pos    |     |    * * *         |     |  Filtered: 12    |
 |                  |     |   *     *        |     |                  |
 +------------------+     +------------------+     +------------------+
-
 ```
 
 ---
@@ -199,8 +272,8 @@ Estado anterior:                 Movimiento relativo:
 Tiempo (ms)   0    2    4    6    8   10   12   14
               |----|----|----|----|----|----|----|
 
-CPU:          [CAP]                    [MATCH][POSE][VIS]
-               2ms                       2ms   1ms   1ms
+CPU:          [CAP]                    [FILT][MATCH][POSE][VIS]
+               2ms                      1ms   2ms    1ms   1ms
 
 GPU Stream 1: ..... [----ORB----]
                          10ms
@@ -218,6 +291,67 @@ Total: ~14ms = ~70 FPS
 
 ---
 
+## Arquitectura de Componentes Implementados (H01-H14)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              ARIA-SLAM SYSTEM                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                         FRONTEND (Real-time)                           │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                  │ │
+│  │  │    Frame     │  │ TRTInference │  │    IMU       │                  │ │
+│  │  │   (H02-H05)  │  │   (H06)      │  │   (H08)      │                  │ │
+│  │  │              │  │              │  │              │                  │ │
+│  │  │ - ORB CUDA   │  │ - YOLO26s    │  │ - Preintegr. │                  │ │
+│  │  │ - GPU desc   │  │ - TensorRT   │  │ - EKF fusion │                  │ │
+│  │  │ - Async      │  │ - Async      │  │ - Bias est.  │                  │ │
+│  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘                  │ │
+│  │         │                 │                 │                          │ │
+│  │         └────────────┬────┴─────────────────┘                          │ │
+│  │                      ▼                                                 │ │
+│  │         ┌──────────────────────────┐                                   │ │
+│  │         │    CUDA Streams (H11)    │                                   │ │
+│  │         │    Parallel Execution    │                                   │ │
+│  │         └────────────┬─────────────┘                                   │ │
+│  └──────────────────────┼─────────────────────────────────────────────────┘ │
+│                         │                                                   │
+│  ┌──────────────────────┼─────────────────────────────────────────────────┐ │
+│  │                      ▼       BACKEND (Optimization)                    │ │
+│  │         ┌──────────────────────────┐                                   │ │
+│  │         │    LoopClosure (H09)     │                                   │ │
+│  │         │    - Descriptor match    │                                   │ │
+│  │         │    - Geometric verify    │                                   │ │
+│  │         │    - GPU matching (H14)  │                                   │ │
+│  │         └────────────┬─────────────┘                                   │ │
+│  │                      │                                                 │ │
+│  │                      ▼                                                 │ │
+│  │         ┌──────────────────────────┐                                   │ │
+│  │         │    Mapper (H10)          │                                   │ │
+│  │         │    - g2o pose graph      │                                   │ │
+│  │         │    - SE3 vertices        │                                   │ │
+│  │         │    - Levenberg-Marquardt │                                   │ │
+│  │         └──────────────────────────┘                                   │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                        DATA LAYER                                      │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                  │ │
+│  │  │ EuRoCReader  │  │   KeyFrame   │  │   MapPoint   │                  │ │
+│  │  │   (H07)      │  │   Database   │  │   Cloud      │                  │ │
+│  │  │              │  │              │  │              │                  │ │
+│  │  │ - Image sync │  │ - Poses      │  │ - 3D points  │                  │ │
+│  │  │ - IMU interp │  │ - Covisib.   │  │ - PLY export │                  │ │
+│  │  │ - GT poses   │  │ - Observ.    │  │              │                  │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘                  │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Flujo de Datos entre Clases
 
 ```
@@ -227,21 +361,20 @@ Total: ~14ms = ~70 FPS
          |
          | crea
          v
-+------------------+     +------------------+
-|  cv::cuda::ORB   |     |  TRTInference    |
-+--------+---------+     +--------+---------+
-         |                        |
-         | usa                    | usa
-         v                        v
-+------------------+     +------------------+
-|      Frame       |     |    Detection     |
-|                  |     |                  |
-| - image          |     | - box            |
-| - keypoints[]    |     | - confidence     |
-| - descriptors    |     | - class_id       |
-| - gpu_descriptors|     +------------------+
-+------------------+
-
++------------------+     +------------------+     +------------------+
+|  cv::cuda::ORB   |     |  TRTInference    |     |   IMU (H08)      |
++--------+---------+     +--------+---------+     +--------+---------+
+         |                        |                        |
+         | usa                    | usa                    | usa
+         v                        v                        v
++------------------+     +------------------+     +------------------+
+|      Frame       |     |    Detection     |     |  ImuMeasurement  |
+|                  |     |                  |     |                  |
+| - image          |     | - box            |     | - timestamp      |
+| - keypoints[]    |     | - confidence     |     | - accel (3D)     |
+| - descriptors    |     | - class_id       |     | - gyro (3D)      |
+| - gpu_descriptors|     +------------------+     +------------------+
++--------+---------+
          |
          | almacena
          v
@@ -249,6 +382,28 @@ Total: ~14ms = ~70 FPS
 |   prev_frame     |
 | (frame anterior) |
 +------------------+
+         |
+         | opcional: promover a
+         v
++------------------+     +------------------+
+|    KeyFrame      |────>|   LoopClosure    |
+|    (H09-H10)     |     |    (H09, H14)    |
+|                  |     |                  |
+| - pose SE3       |     | - detectar loops |
+| - covisibility   |     | - GPU matching   |
+| - observations   |     | - geom. verify   |
++--------+---------+     +--------+---------+
+         |                        |
+         | conecta                | detecta loop
+         v                        v
++------------------+     +------------------+
+|  Pose Graph      |<────| LoopCandidate    |
+|    (g2o)         |     |                  |
+|                  |     | - query_id       |
+| - VertexSE3      |     | - match_id       |
+| - EdgeSE3        |     | - relative_pose  |
+| - optimize()     |     | - matches        |
++------------------+     +------------------+
 ```
 
 ---
@@ -269,8 +424,14 @@ VRAM (~500MB total)
 |  TensorRT Buffers (~400MB)                       |
 |  +--------------------------------------------+  |
 |  | buffers_[0] - Input  (3x640x640 float)     |  |
-|  | buffers_[1] - Output (84x8400 float)       |  |
+|  | buffers_[1] - Output (1x300x6 float)       |  |
 |  | TRT Engine weights                         |  |
+|  +--------------------------------------------+  |
+|                                                  |
+|  Loop Closure (H14) (~50MB)                      |
+|  +--------------------------------------------+  |
+|  | gpu_descriptors_ database                  |  |
+|  | (all keyframe descriptors on GPU)          |  |
 |  +--------------------------------------------+  |
 |                                                  |
 +--------------------------------------------------+
@@ -282,22 +443,49 @@ VRAM (~500MB total)
 
 ```
 src/
-  main.cpp          <- Pipeline principal (este archivo es el CORE)
-  Frame.cpp         <- Wrapper de features (ORB)
-  TRTInference.cpp  <- Wrapper de YOLO (TensorRT)
+  main.cpp          <- Pipeline principal (H11 CUDA streams)
+  Frame.cpp         <- ORB GPU wrapper (H02, H05)
+  TRTInference.cpp  <- YOLO TensorRT (H06)
+  IMU.cpp           <- EKF sensor fusion (H08)
+  LoopClosure.cpp   <- Loop detection + pose graph (H09, H10, H14)
+  EuRoCReader.cpp   <- Dataset reader (H07)
+  Mapper.cpp        <- 3D mapping (H10)
 
 include/
-  Frame.hpp         <- Definicion de Frame
-  TRTInference.hpp  <- Definicion de TRTInference
+  Frame.hpp
+  TRTInference.hpp
+  IMU.hpp
+  LoopClosure.hpp
+  EuRoCReader.hpp
+  Mapper.hpp
 
 Lineas clave en main.cpp:
-  74-77   Crear CUDA streams
-  103-110 Lanzar ORB y YOLO en paralelo
-  112-114 Sincronizar streams
-  127-139 Matching con ratio test
-  142-164 Pose estimation
+  29-40   DYNAMIC_CLASSES (objetos a filtrar)
+  43-50   isInDynamicObject() (filtrado dinamico)
+  100-104 Crear CUDA streams
+  129-136 Lanzar ORB y YOLO en paralelo
+  139-140 Sincronizar streams
+  162-172 Matching con filtrado dinamico
+  176-198 Pose estimation
 ```
 
 ---
 
-**Siguiente:** Leer main.cpp linea por linea.
+## Milestones Completados
+
+| Milestone | Descripcion | Archivo Principal |
+|-----------|-------------|-------------------|
+| H01 | Setup del proyecto | CMakeLists.txt |
+| H02 | Feature extraction | Frame.cpp |
+| H03 | Feature matching | main.cpp |
+| H04 | Pose estimation | main.cpp |
+| H05 | OpenCV CUDA | Frame.cpp |
+| H06 | TensorRT YOLO | TRTInference.cpp |
+| H07 | EuRoC Dataset | EuRoCReader.cpp |
+| H08 | Sensor Fusion (IMU) | IMU.cpp |
+| H09 | Loop Closure | LoopClosure.cpp |
+| H10 | Pose Graph (g2o) | LoopClosure.cpp, Mapper.cpp |
+| H11 | CUDA Streams | main.cpp |
+| H12 | Clean Architecture | (Design doc) |
+| H13 | Multithreading | (Thread patterns) |
+| H14 | GPU Loop Closure | LoopClosure.cpp |

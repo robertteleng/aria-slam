@@ -1,187 +1,234 @@
-# 📊 ANÁLISIS COMPLETO DEL PROYECTO ARIA SLAM
+# ARIA SLAM - Technical Overview
 
-**Fecha:** 2025-12-31
-**Versión:** Fase 1 completada (H1-H10)
-**Autor:** Auditoría técnica completa
-
----
-
-## 1. LIBRERÍAS UTILIZADAS
-
-### 1.1 OpenCV 4.9.0 (con CUDA)
-**Versión:** 4.9.0 compilado con soporte CUDA
-**Propósito:** Procesamiento de imagen y álgebra lineal básica
-**Headers principales:**
-```cpp
-#include <opencv2/opencv.hpp>          // Core OpenCV
-#include <opencv2/cudafeatures2d.hpp>  // GPU ORB detector
-#include <opencv2/cuda.hpp>            // CUDA utilities
-```
-
-**Uso en el proyecto:**
-- Detección de features ORB en GPU (`cv::cuda::ORB`)
-- Feature matching en GPU (`cv::cuda::DescriptorMatcher`)
-- Transferencia CPU↔GPU (`cv::cuda::GpuMat`)
-- Estimación de pose (`cv::findEssentialMat`, `cv::recoverPose`)
-- Triangulación (`cv::triangulatePoints`)
-- Visualización (`cv::imshow`, `cv::drawMatches`)
+**Actualizado:** H01-H14 completados
+**Version:** Fase 1 completa
 
 ---
 
-### 1.2 CUDA Toolkit 12.0+
-**Versión:** 12.6 (según TensorRT path)
-**Propósito:** Procesamiento paralelo en GPU
-**Headers principales:**
-```cpp
-#include <cuda_runtime_api.h>  // CUDA runtime
-```
+## Stack Tecnologico
 
-**Uso en el proyecto:**
-- Gestión de memoria GPU (`cudaMalloc`, `cudaFree`)
-- Transferencias asíncronas (`cudaMemcpyAsync`)
-- Streams CUDA (`cudaStream_t`, `cudaStreamCreate`)
-- Sincronización (`cudaStreamSynchronize`)
+| Tecnologia | Version | Proposito |
+|------------|---------|-----------|
+| C++ | 17 | Lenguaje principal |
+| OpenCV | 4.9.0 (CUDA) | Vision, features, matching |
+| CUDA Toolkit | 12.6+ | GPU computing |
+| TensorRT | 10.7+ | YOLO inference |
+| Eigen | 3.3+ | Algebra lineal |
+| g2o | Sistema | Pose graph optimization |
 
 ---
 
-### 1.3 TensorRT 10.7.0.23
-**Versión:** 10.7.0.23
-**Propósito:** Inferencia de deep learning optimizada
-**Headers principales:**
+## Librerias Utilizadas
+
+### OpenCV 4.9.0 (CUDA)
+
 ```cpp
-#include <NvInfer.h>  // TensorRT inference engine
+#include <opencv2/opencv.hpp>          // Core
+#include <opencv2/cudafeatures2d.hpp>  // GPU ORB
+#include <opencv2/cuda.hpp>            // GpuMat
 ```
 
-**Uso en el proyecto:**
-- Detección de objetos YOLO26s
-- Gestión de modelo (`IRuntime`, `ICudaEngine`, `IExecutionContext`)
-- Ejecución asíncrona (`enqueueV3`)
-- Logging personalizado (`ILogger`)
+**Uso:**
+- `cv::cuda::ORB` - Feature detection GPU
+- `cv::cuda::DescriptorMatcher` - Matching GPU
+- `cv::cuda::GpuMat` - Memoria GPU
+- `cv::findEssentialMat` - Geometria epipolar
+- `cv::recoverPose` - Descomposicion R, t
 
-**Configuración:**
+### CUDA Toolkit
+
 ```cpp
-// TRTInference.cpp:14
-engine_path: "../models/yolo26s.engine"
-input_size: 640x640 (típico YOLO)
-output_size: [1, 84, 8400] (4 coords + 80 classes)
+#include <cuda_runtime_api.h>
 ```
 
----
+**Uso:**
+- `cudaStream_t` - Streams paralelos
+- `cudaMalloc/cudaFree` - Memoria GPU
+- `cudaMemcpyAsync` - Transferencias async
+- `cudaStreamSynchronize` - Sincronizacion
 
-### 1.4 Eigen 3.3+
-**Versión:** 3.3+ (sistema)
-**Propósito:** Álgebra lineal de alta dimensión
-**Headers principales:**
+### TensorRT 10.7
+
 ```cpp
-#include <Eigen/Dense>  // Matrices, vectores, Quaternion
+#include <NvInfer.h>
 ```
 
-**Uso en el proyecto:**
-- **Vectores:** `Eigen::Vector3d` (posición, velocidad, aceleración)
-- **Matrices:** `Eigen::Matrix3d` (rotación), `Eigen::Matrix4d` (pose SE3)
-- **Quaternions:** `Eigen::Quaterniond` (orientación sin gimbal lock)
-- **EKF:** `Eigen::Matrix<double, 15, 15>` (covarianza 15-state)
-- **Operaciones:** LU decomposition, inverse, transpose
+**Uso:**
+- `IRuntime` - Runtime TensorRT
+- `ICudaEngine` - Motor optimizado
+- `IExecutionContext` - Contexto de inferencia
+- `enqueueV3` - Inferencia async
 
----
+### Eigen 3.3+
 
-### 1.5 g2o (Graph Optimization)
-**Versión:** Sistema (apt)
-**Propósito:** Optimización de pose graph para loop closure
-**Headers principales:**
+```cpp
+#include <Eigen/Dense>
+```
+
+**Uso:**
+- `Eigen::Vector3d` - Posicion, velocidad
+- `Eigen::Matrix3d` - Rotacion
+- `Eigen::Matrix4d` - Pose SE3
+- `Eigen::Quaterniond` - Orientacion
+- `Eigen::Matrix<double, 15, 15>` - EKF covarianza
+
+### g2o
+
 ```cpp
 #include <g2o/core/sparse_optimizer.h>
-#include <g2o/core/block_solver.h>
-#include <g2o/core/optimization_algorithm_levenberg.h>
-#include <g2o/solvers/eigen/linear_solver_eigen.h>
 #include <g2o/types/slam3d/vertex_se3.h>
 #include <g2o/types/slam3d/edge_se3.h>
 ```
 
-**Uso en el proyecto:**
-- Vértices: poses SE3 de keyframes (`VertexSE3`)
-- Aristas: restricciones odometría/loop (`EdgeSE3`)
-- Solver: Levenberg-Marquardt con Eigen backend
-- Información: matriz 6×6 (peso de restricciones)
+**Uso:**
+- `VertexSE3` - Poses de keyframes
+- `EdgeSE3` - Restricciones odometria/loop
+- `OptimizationAlgorithmLevenberg` - Solver
 
 ---
 
-## 2. ARQUITECTURA DEL SISTEMA
+## Arquitectura de Clases
 
-### 2.1 Clases y Estructuras
+### Frame (H02, H05)
 
-#### **Frame** ([include/Frame.hpp:11](../include/Frame.hpp))
-**Responsabilidad:** Almacena imagen y features ORB
-**Miembros:**
 ```cpp
-cv::Mat image;                        // Imagen BGR original
-std::vector<cv::KeyPoint> keypoints;  // Keypoints CPU
-cv::Mat descriptors;                  // Descriptors CPU
-cv::cuda::GpuMat gpu_descriptors;     // Descriptors GPU (matching)
+class Frame {
+    cv::Mat image;
+    std::vector<cv::KeyPoint> keypoints;
+    cv::Mat descriptors;
+    cv::cuda::GpuMat gpu_descriptors;
+};
 ```
-**Constructores:**
-- `Frame(Mat, cuda::ORB)` - GPU pipeline
-- `Frame(Mat, cv::ORB)` - CPU fallback
-- `Frame(const Frame&)` - Deep copy
 
----
+### TRTInference (H06)
 
-#### **Detection** ([include/TRTInference.hpp:9](../include/TRTInference.hpp))
-**Responsabilidad:** Representa detección YOLO
 ```cpp
-struct Detection {
-    cv::Rect box;       // Bounding box
-    float confidence;   // Score [0-1]
-    int class_id;       // COCO class
+class TRTInference {
+    nvinfer1::IExecutionContext* context_;
+    void* buffers_[2];
+    cudaStream_t stream_;
+
+    void detectAsync(cv::Mat, cudaStream_t);
+    std::vector<Detection> getDetections();
+};
+```
+
+### IMU (H08)
+
+```cpp
+class IMU {
+    Eigen::Matrix<double, 15, 1> state_;  // pos, vel, quat, bias_a, bias_g
+    Eigen::Matrix<double, 15, 15> P_;     // Covarianza
+
+    void predict(ImuMeasurement);
+    void updateVO(Pose);
+};
+```
+
+### LoopClosure (H09, H10, H14)
+
+```cpp
+class LoopClosure {
+    std::vector<KeyFrame> keyframes_;
+    cv::cuda::GpuMat gpu_descriptors_;  // H14: GPU database
+    g2o::SparseOptimizer optimizer_;
+
+    bool detect(KeyFrame& query);
+    void optimizePoseGraph();
+};
+```
+
+### EuRoCReader (H07)
+
+```cpp
+class EuRoCReader {
+    std::vector<ImageEntry> images_;
+    std::vector<ImuEntry> imu_data_;
+    std::vector<GroundTruth> ground_truth_;
+
+    bool getNextSynchronized(cv::Mat&, std::vector<ImuMeasurement>&);
 };
 ```
 
 ---
 
-#### **TRTInference** ([include/TRTInference.hpp:15](../include/TRTInference.hpp))
-**Responsabilidad:** Wrapper TensorRT para YOLO
-**Miembros privados:**
-```cpp
-nvinfer1::IRuntime* runtime_;
-nvinfer1::ICudaEngine* engine_;
-nvinfer1::IExecutionContext* context_;
-void* buffers_[2];        // GPU input/output
-cudaStream_t stream_;     // CUDA stream async
-int input_h_, input_w_;   // 640x640
-int output_size_;         // 672000 (84*8400)
+## Pipeline Principal (main.cpp)
+
 ```
-**Métodos:**
-- `detect(image)` → `vector<Detection>` (público)
-- `preprocess(image, gpu_input)` - BGR→RGB, HWC→CHW
-- `postprocess(output)` - NMS, threshold
-
-**RAII:** Destructor libera GPU memory y TensorRT objects
-
----
-
-## 3. RESUMEN EJECUTIVO
-
-### Stack Tecnológico
-- **C++17** moderno con smart pointers, lambdas, structured bindings
-- **OpenCV 4.9.0 CUDA** para vision paralela
-- **TensorRT 10.7** para deep learning optimizado
-- **Eigen 3.3+** para álgebra lineal numérica
-- **g2o** para optimización no-lineal
-
-### Arquitectura
-- 8 clases principales + 6 structs auxiliares
-- Pimpl idiom para encapsulación
-- RAII para gestión de recursos
-- Pipeline modular GPU/CPU
-
-### Performance
-- ORB: ~10ms GPU (vs ~50ms CPU)
-- YOLO: ~5ms TensorRT FP16
-- Pipeline total: 60-80 FPS (sin streams paralelos)
-- **Target H11:** 100+ FPS con CUDA streams
+1. Capturar frame
+2. Lanzar en paralelo (H11):
+   - Stream 1: ORB GPU
+   - Stream 2: YOLO TensorRT
+3. Sincronizar streams
+4. Filtrar keypoints en objetos dinamicos (H06)
+5. Matching con frame anterior
+6. Estimar pose (Essential Matrix + RANSAC)
+7. Acumular trayectoria
+8. Visualizar
+```
 
 ---
 
-**Generado:** 2025-12-31
-**Revisión:** v1.0
-**Próximo milestone:** H11 - CUDA Streams
+## Performance
+
+| Operacion | CPU | GPU | Speedup |
+|-----------|-----|-----|---------|
+| ORB (1000 pts) | 50ms | 10ms | 5x |
+| YOLO inference | 100ms | 5ms | 20x |
+| BF Match | 15ms | 2ms | 7.5x |
+| **Pipeline total** | ~165ms | ~17ms | **~10x** |
+
+**FPS:** ~60-80 con CUDA streams
+
+---
+
+## Archivos del Proyecto
+
+```
+src/
+  main.cpp          # Pipeline principal
+  Frame.cpp         # ORB GPU wrapper
+  TRTInference.cpp  # YOLO TensorRT
+  IMU.cpp           # EKF sensor fusion
+  LoopClosure.cpp   # Loop detection + pose graph
+  EuRoCReader.cpp   # Dataset reader
+  Mapper.cpp        # 3D mapping
+
+include/
+  Frame.hpp
+  TRTInference.hpp
+  IMU.hpp
+  LoopClosure.hpp
+  EuRoCReader.hpp
+  Mapper.hpp
+
+models/
+  yolo26s.engine    # TensorRT engine
+
+docs/
+  milestones/       # H01-H14 AUDIT docs
+  PIPELINE_DIAGRAM.md
+  STUDY_GUIDE.md
+  BLACKWELL_SETUP.md
+```
+
+---
+
+## Milestones
+
+| # | Nombre | Estado |
+|---|--------|--------|
+| H01 | Setup | Completado |
+| H02 | Feature Extraction | Completado |
+| H03 | Feature Matching | Completado |
+| H04 | Pose Estimation | Completado |
+| H05 | OpenCV CUDA | Completado |
+| H06 | TensorRT YOLO | Completado |
+| H07 | EuRoC Dataset | Completado |
+| H08 | Sensor Fusion | Completado |
+| H09 | Loop Closure | Completado |
+| H10 | Pose Graph | Completado |
+| H11 | CUDA Streams | Completado |
+| H12 | Clean Architecture | Design doc |
+| H13 | Multithreading | Completado |
+| H14 | GPU Loop Closure | Completado |

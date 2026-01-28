@@ -1,44 +1,95 @@
 # main.cpp - Explicacion Linea por Linea
 
+**Actualizado:** H01-H14 (265 lineas)
+
+---
+
 ## Estructura General
 
 ```
-main.cpp tiene ~215 lineas:
-- Lineas 1-41:   Includes y constantes
-- Lineas 43-78:  Inicializacion
-- Lineas 96-208: Loop principal (1 iteracion = 1 frame)
-- Lineas 210-215: Cleanup
+main.cpp (~265 lineas):
+- Lineas 1-66:    Includes, constantes, DYNAMIC_CLASSES
+- Lineas 68-121:  Inicializacion (CUDA, video, ORB, YOLO, streams)
+- Lineas 122-257: Loop principal
+- Lineas 259-264: Cleanup
 ```
 
 ---
 
-## Seccion 1: Includes y Constantes (1-41)
+## Seccion 1: Includes y Constantes (1-66)
+
+### Includes (18-27)
 
 ```cpp
 #include <iostream>
 #include <memory>
+#include <set>                          // Para DYNAMIC_CLASSES
 #include <opencv2/opencv.hpp>
-#include <opencv2/cudafeatures2d.hpp>  // ORB GPU
+#include <opencv2/cudafeatures2d.hpp>   // ORB GPU
 #include <cuda_runtime_api.h>           // CUDA streams
 #include <chrono>                       // Medir tiempo
-#include "Frame.hpp"                    // Nuestra clase Frame
-#include "TRTInference.hpp"             // Nuestra clase YOLO
+#include "Frame.hpp"
+#include "TRTInference.hpp"
 ```
 
+### Clases Dinamicas (29-40)
+
 ```cpp
-// 80 clases de COCO (dataset donde se entreno YOLO)
-const std::vector<std::string> COCO_CLASSES = {
-    "person", "bicycle", "car", ...
+const std::set<int> DYNAMIC_CLASSES = {
+    0,   // person
+    1,   // bicycle
+    2,   // car
+    3,   // motorcycle
+    5,   // bus
+    6,   // train
+    7,   // truck
+    14,  // bird
+    15,  // cat
+    16,  // dog
 };
 ```
 
-**Por que importa:** Necesitamos OpenCV CUDA para ORB en GPU, y cuda_runtime para crear streams.
+**Por que:** Objetos que se mueven no sirven para odometria visual. Si un keypoint esta sobre una persona caminando, ese match sera incorrecto.
+
+### Funcion de Filtrado (43-50)
+
+```cpp
+bool isInDynamicObject(const cv::Point2f& pt, const std::vector<Detection>& detections) {
+    for (const auto& det : detections) {
+        if (DYNAMIC_CLASSES.count(det.class_id) && det.box.contains(pt)) {
+            return true;
+        }
+    }
+    return false;
+}
+```
+
+**Que hace:** Dado un punto 2D y las detecciones YOLO, retorna `true` si el punto esta dentro de un bounding box de objeto dinamico.
+
+### COCO Classes (53-66)
+
+```cpp
+const std::vector<std::string> COCO_CLASSES = {
+    "person", "bicycle", "car", ...  // 80 clases
+};
+```
+
+**Para que:** Convertir class_id (numero) a nombre legible para visualizacion.
 
 ---
 
-## Seccion 2: Inicializacion (43-78)
+## Seccion 2: Inicializacion (68-121)
 
-### Verificar CUDA (47-52)
+### Modo Headless (69-70)
+
+```cpp
+bool headless = (argc > 1 && std::string(argv[1]) == "--headless");
+```
+
+**Para que:** Ejecutar sin ventanas (CI/CD, benchmarks, SSH).
+
+### Verificar CUDA (73-78)
+
 ```cpp
 int cuda_devices = cv::cuda::getCudaEnabledDeviceCount();
 if (cuda_devices == 0) {
@@ -46,19 +97,9 @@ if (cuda_devices == 0) {
     return -1;
 }
 ```
-**Que hace:** Verifica que hay GPU NVIDIA disponible.
 
-### Abrir Video (54-58)
-```cpp
-cv::VideoCapture cap("../test.mp4");
-if (!cap.isOpened()) {
-    std::cerr << "Error: Could not open video." << std::endl;
-    return -1;
-}
-```
-**Que hace:** Abre el video de prueba. `cap >> frame` leera frames.
+### Crear Detectores (86-98)
 
-### Crear Detectores (60-72)
 ```cpp
 // ORB en GPU
 cv::Ptr<cv::cuda::ORB> orb = cv::cuda::ORB::create();
@@ -75,40 +116,27 @@ try {
     std::cerr << "Warning: YOLO disabled - " << e.what() << std::endl;
 }
 ```
-**Que hace:**
-- `ORB::create()` - Detector de features en GPU
-- `BFMatcher(NORM_HAMMING)` - Matcher para descriptores binarios (ORB usa bits)
-- `TRTInference` - Carga el motor YOLO optimizado
 
-### Crear CUDA Streams (74-78)
+### Crear CUDA Streams (100-104)
+
 ```cpp
 cudaStream_t stream_orb, stream_yolo;
 cudaStreamCreate(&stream_orb);
 cudaStreamCreate(&stream_yolo);
+std::cout << "H11: CUDA streams created for parallel ORB + YOLO" << std::endl;
 ```
-**Que hace:** Crea dos "colas" independientes para la GPU.
-- `stream_orb` - Cola para operaciones ORB
-- `stream_yolo` - Cola para operaciones YOLO
 
-**Por que importa:** Permite que ORB y YOLO ejecuten EN PARALELO.
+**Por que streams:**
+- Sin streams: ORB espera, luego YOLO espera = 15ms
+- Con streams: ORB y YOLO ejecutan en paralelo = 10ms (max de ambos)
 
-### Variables de Estado (80-94)
+### Matriz de Camara (109-113)
+
 ```cpp
-// Frame anterior (para matching)
-std::unique_ptr<Frame> prev_frame;
-
-// Matriz de camara (parametros intrinsicos)
 double fx = 700, fy = 700;        // Distancia focal
 double cx = 640 / 2.0;            // Centro X
 double cy = 360 / 2.0;            // Centro Y
 cv::Mat K = (cv::Mat_<double>(3,3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
-
-// Pose acumulada (donde estamos en el mundo)
-cv::Mat position = cv::Mat::zeros(3, 1, CV_64F);  // (x, y, z)
-cv::Mat rotation = cv::Mat::eye(3, 3, CV_64F);    // Identidad inicial
-
-// Canvas para dibujar trayectoria
-cv::Mat trajectory = cv::Mat::zeros(600, 600, CV_8UC3);
 ```
 
 **Matriz K:**
@@ -118,104 +146,105 @@ K = | fx  0  cx |   fx,fy = distancia focal (zoom)
     |  0  0   1 |
 ```
 
----
+### Estado Inicial (116-120)
 
-## Seccion 3: Loop Principal (96-208)
-
-### Inicio del Loop (96-101)
 ```cpp
-while (true) {
-    auto t1 = std::chrono::high_resolution_clock::now();  // Timer inicio
-
-    cv::Mat frame;
-    cap >> frame;                    // Leer siguiente frame
-    if (frame.empty()) break;        // Fin del video
+cv::Mat position = cv::Mat::zeros(3, 1, CV_64F);  // (x, y, z) = origen
+cv::Mat rotation = cv::Mat::eye(3, 3, CV_64F);    // Identidad = sin rotacion
+cv::Mat trajectory = cv::Mat::zeros(600, 600, CV_8UC3);  // Canvas negro
 ```
 
-### LANZAR ORB Y YOLO EN PARALELO (103-110)
+---
+
+## Seccion 3: Loop Principal (122-257)
+
+### Leer Frame (125-127)
+
 ```cpp
-// Stream 1: ORB (async - no bloquea)
+cv::Mat frame;
+cap >> frame;
+if (frame.empty()) break;
+```
+
+### H11: Lanzar ORB y YOLO en Paralelo (129-136)
+
+```cpp
+// Stream 1: ORB feature extraction (async)
 Frame current_frame(frame, orb, stream_orb);
 
-// Stream 2: YOLO (async - no bloquea)
+// Stream 2: YOLO object detection (async)
 if (yolo) {
     yolo->detectAsync(frame, stream_yolo);
 }
 ```
-**Que hace:**
-1. `Frame(frame, orb, stream_orb)` - Lanza ORB en stream 1
-2. `detectAsync(frame, stream_yolo)` - Lanza YOLO en stream 2
-3. AMBOS ejecutan en la GPU SIMULTANEAMENTE
 
 **IMPORTANTE:** Estas llamadas RETORNAN INMEDIATAMENTE. El trabajo GPU esta en progreso.
 
-### SINCRONIZAR STREAMS (112-114)
+### H11: Sincronizar Streams (139-140)
+
 ```cpp
 cudaStreamSynchronize(stream_orb);
 cudaStreamSynchronize(stream_yolo);
 ```
-**Que hace:** Espera a que AMBAS operaciones terminen.
 
 **Timeline:**
 ```
-Linea 105: lanza ORB       |------ ORB GPU ------|
-Linea 109: lanza YOLO      |-- YOLO GPU --|
-Linea 113: sync ORB                              ^ espera aqui
-Linea 114: sync YOLO       (ya termino, no espera)
+Linea 131: lanza ORB       |------ ORB GPU ------|
+Linea 135: lanza YOLO      |-- YOLO GPU --|
+Linea 139: sync ORB                              ^ espera aqui
+Linea 140: sync YOLO       (ya termino, no espera)
 ```
 
-### OBTENER RESULTADOS (116-123)
+### Obtener Resultados (143-149)
+
 ```cpp
-// Bajar resultados de ORB desde GPU
 current_frame.downloadResults();
 
-// Obtener detecciones YOLO (ya estan en CPU despues del sync)
 std::vector<Detection> detections;
 if (yolo) {
     detections = yolo->getDetections(0.5f, 0.45f);
     //                              conf   nms
 }
 ```
-**Que hace:**
-- `downloadResults()` - Copia keypoints y descriptors de GPU a CPU
-- `getDetections(0.5, 0.45)` - Postprocesa: filtra por confianza 50%, NMS 45%
 
-### MATCHING (125-139)
+### Matching con Filtrado Dinamico (152-173)
+
 ```cpp
 std::vector<cv::DMatch> good_matches;
+int filtered_count = 0;
 
-if (prev_frame &&
-    !prev_frame->gpu_descriptors.empty() &&
-    !current_frame.gpu_descriptors.empty()) {
-
-    // kNN match (k=2 para ratio test)
+if (prev_frame && ...) {
     std::vector<std::vector<cv::DMatch>> knn_matches;
     matcher->knnMatch(prev_frame->gpu_descriptors,
-                      current_frame.gpu_descriptors,
-                      knn_matches, 2);
+                      current_frame.gpu_descriptors, knn_matches, 2);
 
-    // Lowe's ratio test
     for (auto& knn : knn_matches) {
         if (knn.size() >= 2 && knn[0].distance < 0.75 * knn[1].distance) {
-            good_matches.push_back(knn[0]);
+            // Filter out keypoints on dynamic objects
+            cv::Point2f pt1 = prev_frame->keypoints[knn[0].queryIdx].pt;
+            cv::Point2f pt2 = current_frame.keypoints[knn[0].trainIdx].pt;
+
+            if (!isInDynamicObject(pt1, detections) &&
+                !isInDynamicObject(pt2, detections)) {
+                good_matches.push_back(knn[0]);
+            } else {
+                filtered_count++;
+            }
         }
     }
 }
 ```
-**Que hace:**
-1. `knnMatch(..., 2)` - Para cada descriptor en frame N-1, encuentra los 2 mas cercanos en frame N
-2. Ratio test: Si el mejor es MUCHO mejor que el segundo (< 75%), es confiable
 
-**Por que ratio test:**
-```
-Caso bueno: distances = [10, 100]  -> 10/100 = 0.1 < 0.75 OK
-Caso malo:  distances = [50, 60]   -> 50/60 = 0.83 > 0.75 RECHAZADO
-```
+**Filtrado dinamico:**
+1. kNN match encuentra 2 mejores candidatos
+2. Lowe's ratio test filtra matches ambiguos
+3. `isInDynamicObject` filtra keypoints sobre personas/coches/etc
+4. Solo los matches en objetos estaticos se usan para pose
 
-### POSE ESTIMATION (141-164)
+### Pose Estimation (176-198)
+
 ```cpp
 if (good_matches.size() >= 8) {
-    // Extraer puntos correspondientes
     std::vector<cv::Point2f> pts1, pts2;
     for (auto& m : good_matches) {
         pts1.push_back(prev_frame->keypoints[m.queryIdx].pt);
@@ -242,15 +271,7 @@ if (good_matches.size() >= 8) {
 
 **Por que >= 8 matches:**
 - Essential Matrix tiene 5 grados de libertad
-- Necesita minimo 5 puntos (pero 8 es mas robusto con RANSAC)
-
-**findEssentialMat:**
-- Encuentra matriz E tal que: `pts2^T * E * pts1 = 0`
-- RANSAC ignora outliers (matches incorrectos)
-
-**recoverPose:**
-- Descompone E en 4 soluciones posibles
-- Elige la que tiene puntos DELANTE de la camara
+- Minimo 5 puntos, pero 8 es mas robusto con RANSAC
 
 **Acumular pose:**
 ```cpp
@@ -258,46 +279,57 @@ position = position + rotation * t;  // Mover en direccion actual
 rotation = R * rotation;              // Actualizar orientacion
 ```
 
-### VISUALIZACION (166-203)
+### Visualizacion (207-244)
+
 ```cpp
-// Mostrar trayectoria
-cv::imshow("Trajectory", trajectory);
+if (!headless) {
+    cv::imshow("Trajectory", trajectory);
 
-// Dibujar matches o keypoints
-cv::Mat display;
-if (prev_frame && !good_matches.empty()) {
-    cv::drawMatches(...);  // Dibuja lineas entre matches
-} else {
-    cv::drawKeypoints(...);  // Solo puntos verdes
+    // Dibujar matches
+    cv::Mat display;
+    cv::drawMatches(prev_frame->image, prev_frame->keypoints,
+                   current_frame.image, current_frame.keypoints,
+                   good_matches, display);
+
+    // Dibujar detecciones YOLO
+    for (const auto& det : detections) {
+        cv::rectangle(display, det.box, cv::Scalar(0, 0, 255), 2);
+        std::string label = COCO_CLASSES[det.class_id] + " " +
+                           std::to_string((int)(det.confidence * 100)) + "%";
+        cv::putText(display, label, ...);
+    }
+
+    // Estadisticas
+    cv::putText(display, "FPS: " + std::to_string((int)(1000.0 / ms)), ...);
+    cv::putText(display, "Matches: " + std::to_string(good_matches.size()), ...);
+    cv::putText(display, "Objects: " + std::to_string(detections.size()), ...);
+    cv::putText(display, "Filtered: " + std::to_string(filtered_count), ...);
 }
-
-// Dibujar detecciones YOLO
-for (const auto& det : detections) {
-    cv::rectangle(display, det.box, cv::Scalar(0, 0, 255), 2);
-    std::string label = COCO_CLASSES[det.class_id] + " " +
-                       std::to_string((int)(det.confidence * 100)) + "%";
-    cv::putText(display, label, ...);
-}
-
-// Guardar frame actual para siguiente iteracion
-prev_frame = std::make_unique<Frame>(current_frame);
-
-// Mostrar FPS
-auto t2 = std::chrono::high_resolution_clock::now();
-double ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
-cv::putText(display, "FPS: " + std::to_string((int)(1000.0 / ms)), ...);
 ```
 
-### EXIT Y CLEANUP (206-215)
-```cpp
-    char key = cv::waitKey(1);
-    if (key == 'q') break;
-}
+### Modo Headless (245-256)
 
-// Liberar CUDA streams
+```cpp
+} else {
+    static int frame_count = 0;
+    frame_count++;
+    if (frame_count % 50 == 0) {
+        std::cout << "Frame " << frame_count
+                  << " | FPS: " << (int)(1000.0 / ms)
+                  << " | Matches: " << good_matches.size()
+                  << " | Objects: " << detections.size()
+                  << " | Filtered: " << filtered_count << std::endl;
+    }
+}
+```
+
+---
+
+## Seccion 4: Cleanup (259-264)
+
+```cpp
 cudaStreamDestroy(stream_orb);
 cudaStreamDestroy(stream_yolo);
-
 return 0;
 ```
 
@@ -311,10 +343,10 @@ return 0;
 3. Lanzar YOLO (async)     yolo->detectAsync(frame, stream_yolo)
 4. Sincronizar             cudaStreamSynchronize(...)
 5. Obtener resultados      downloadResults(), getDetections()
-6. Match con anterior      matcher->knnMatch() + ratio test
+6. Match con filtrado      knnMatch + ratio test + isInDynamicObject
 7. Estimar pose            findEssentialMat + recoverPose
 8. Acumular posicion       position += rotation * t
-9. Visualizar              imshow()
+9. Visualizar              imshow() o stdout
 10. Guardar frame          prev_frame = current_frame
 ```
 
@@ -324,16 +356,15 @@ return 0;
 
 | Linea | Codigo | Proposito |
 |-------|--------|-----------|
-| 74-77 | `cudaStreamCreate` | Crear streams paralelos |
-| 105 | `Frame(frame, orb, stream_orb)` | ORB async |
-| 109 | `yolo->detectAsync(frame, stream_yolo)` | YOLO async |
-| 113-114 | `cudaStreamSynchronize` | Esperar GPU |
-| 132 | `matcher->knnMatch` | Matching GPU |
-| 135 | `knn[0].distance < 0.75 * knn[1].distance` | Ratio test |
-| 150 | `findEssentialMat` | Geometria epipolar |
-| 154 | `recoverPose` | Extraer R, t |
-| 157-158 | `position += rotation * t` | Acumular pose |
-
----
-
-**Siguiente:** Compilar y ejecutar para ver el resultado visual.
+| 29-40 | `DYNAMIC_CLASSES` | Objetos a filtrar |
+| 43-50 | `isInDynamicObject` | Filtrar keypoints |
+| 100-103 | `cudaStreamCreate` | Crear streams paralelos |
+| 131 | `Frame(frame, orb, stream_orb)` | ORB async |
+| 135 | `yolo->detectAsync(...)` | YOLO async |
+| 139-140 | `cudaStreamSynchronize` | Esperar GPU |
+| 159 | `matcher->knnMatch` | Matching GPU |
+| 162 | `knn[0].distance < 0.75 * knn[1].distance` | Ratio test |
+| 166-167 | `!isInDynamicObject(...)` | Filtrado dinamico |
+| 184 | `findEssentialMat` | Geometria epipolar |
+| 188 | `recoverPose` | Extraer R, t |
+| 191-192 | `position += rotation * t` | Acumular pose |
