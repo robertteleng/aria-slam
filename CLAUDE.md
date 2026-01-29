@@ -13,6 +13,7 @@
 - Usar formato HEREDOC para mensajes de commit multilinea
 - Preguntar al usuario antes de hacer push
 - **NUNCA** incluir `Co-Authored-By` en los mensajes de commit
+- **NUNCA** usar milestones (h01, h12, etc.) en el scope del commit
 
 ### Formato de commit
 ```bash
@@ -26,11 +27,16 @@ EOF
 
 ### Tipos de commit
 - `feat:` - nueva funcionalidad
+- `feat(scope):` - nueva funcionalidad con scope (ej: `feat(matcher):`, `feat(pipeline):`)
 - `fix:` - corrección de bug
 - `docs:` - documentación
 - `refactor:` - refactorización sin cambiar funcionalidad
 - `test:` - tests
 - `chore:` - tareas de mantenimiento
+
+### Scope válidos (ejemplos)
+- `matcher`, `extractor`, `detector`, `pipeline`, `imu`, `mapper`
+- **NO usar:** `h01`, `h12`, `aria`, números de milestone
 
 ## Metodología de enseñanza
 
