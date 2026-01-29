@@ -25,11 +25,11 @@ link_directories(${TensorRT_LIBS})
 
 add_executable(aria_slam
     src/main.cpp
-    src/Frame.cpp
-    src/TRTInference.cpp
-    src/IMU.cpp
-    src/LoopClosure.cpp
-    src/Mapper.cpp
+    src/legacy/Frame.cpp
+    src/legacy/TRTInference.cpp
+    src/legacy/IMU.cpp
+    src/legacy/LoopClosure.cpp
+    src/legacy/Mapper.cpp
 )
 
 target_link_libraries(aria_slam
@@ -47,12 +47,12 @@ target_link_libraries(aria_slam
 # EuRoC dataset evaluation
 add_executable(euroc_eval
     src/euroc_eval.cpp
-    src/EuRoCReader.cpp
-    src/Frame.cpp
-    src/TRTInference.cpp
-    src/IMU.cpp
-    src/LoopClosure.cpp
-    src/Mapper.cpp
+    src/legacy/EuRoCReader.cpp
+    src/legacy/Frame.cpp
+    src/legacy/TRTInference.cpp
+    src/legacy/IMU.cpp
+    src/legacy/LoopClosure.cpp
+    src/legacy/Mapper.cpp
 )
 
 target_link_libraries(euroc_eval
@@ -70,7 +70,7 @@ target_link_libraries(euroc_eval
 # Experiments/benchmarks
 add_executable(benchmark_imu
     experiments/benchmark_imu.cpp
-    src/IMU.cpp
+    src/legacy/IMU.cpp
 )
 
 target_link_libraries(benchmark_imu
