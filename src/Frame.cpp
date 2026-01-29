@@ -1,4 +1,4 @@
-#include "Frame.hpp"
+#include "legacy/Frame.hpp"
 #include <opencv2/core/cuda_stream_accessor.hpp>
 
 // GPU ORB: uploads image to VRAM, detects features

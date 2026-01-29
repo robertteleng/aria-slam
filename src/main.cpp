@@ -22,8 +22,8 @@
 #include <opencv2/cudafeatures2d.hpp>
 #include <cuda_runtime_api.h>
 #include <chrono>
-#include "Frame.hpp"
-#include "TRTInference.hpp"
+#include "legacy/Frame.hpp"
+#include "legacy/TRTInference.hpp"
 
 // Dynamic object classes to filter (COCO IDs)
 const std::set<int> DYNAMIC_CLASSES = {

@@ -1,4 +1,4 @@
-#include "Mapper.hpp"
+#include "legacy/Mapper.hpp"
 #include <iostream>
 #include <cmath>
 

@@ -1,4 +1,4 @@
-#include "IMU.hpp"
+#include "legacy/IMU.hpp"
 #include <iostream>
 
 // Helper function for skew-symmetric matrix

@@ -1,4 +1,4 @@
-#include "TRTInference.hpp"
+#include "legacy/TRTInference.hpp"
 #include <fstream>
 #include <iostream>
 #include <algorithm>

@@ -1,4 +1,4 @@
-#include "LoopClosure.hpp"
+#include "legacy/LoopClosure.hpp"
 #include <iostream>
 #include <algorithm>
 

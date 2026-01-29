@@ -1,4 +1,4 @@
-#include "EuRoCReader.hpp"
+#include "legacy/EuRoCReader.hpp"
 #include <iostream>
 #include <algorithm>
 #include <filesystem>

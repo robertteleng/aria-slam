@@ -17,12 +17,12 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/cudafeatures2d.hpp>
 #include <cuda_runtime.h>
-#include "EuRoCReader.hpp"
-#include "Frame.hpp"
-#include "IMU.hpp"
-#include "LoopClosure.hpp"
-#include "Mapper.hpp"
-#include "TRTInference.hpp"
+#include "legacy/EuRoCReader.hpp"
+#include "legacy/Frame.hpp"
+#include "legacy/IMU.hpp"
+#include "legacy/LoopClosure.hpp"
+#include "legacy/Mapper.hpp"
+#include "legacy/TRTInference.hpp"
 
 // Compute Absolute Trajectory Error (ATE)
 double computeATE(const std::vector<Eigen::Vector3d>& estimated,
