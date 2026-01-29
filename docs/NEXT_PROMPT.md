@@ -1,18 +1,19 @@
-# Siguiente Sesión: Aprendiendo Clean Architecture
+# Siguiente Sesión: Continuando H12 Clean Architecture
 
-## Contexto
+## Estado Actual
 
-Estamos en H12 (Clean Architecture). La estructura base está creada:
+**H12 (Clean Architecture)** sigue en progreso. Se agregaron H15 y H16 como hitos futuros.
+
+### Estructura H12 creada:
 - `include/core/Types.hpp` - Tipos del dominio
 - `include/interfaces/*.hpp` - Interfaces abstractas
 - `include/adapters/gpu/*.hpp` - Headers de adaptadores GPU
 - `src/adapters/gpu/OrbCudaExtractor.cpp` - Primer adapter implementado
 
-## Nueva Metodología de Aprendizaje
-
-**Problema anterior:** Claude escribía código, yo copiaba sin entender.
-
-**Solución:** Aprendizaje guiado con preguntas. Claude pregunta, yo respondo, luego escribo el código.
+### Nuevos hitos planificados (NO implementados aún):
+- **H15**: Meta Aria Integration - Interface `IAriaDevice.hpp` creada
+- **H16**: Audio Feedback - Interface `IAudioFeedback.hpp` creada
+- `.venv/` con SDK de Meta Aria instalado (para cuando llegue H15)
 
 ## Ejercicio Pendiente: Implementar CudaMatcher
 
@@ -35,12 +36,17 @@ matcher->knnMatch(prev_frame->gpu_descriptors, current_frame.gpu_descriptors, kn
    - Entrada: ¿de qué tipo a qué tipo?
    - Salida: ¿de qué tipo a qué tipo?
 
+## Metodología de Aprendizaje
+
+**Problema anterior:** Claude escribía código, yo copiaba sin entender.
+
+**Solución:** Aprendizaje guiado con preguntas. Claude pregunta, yo respondo, luego escribo el código.
+
 ## Cómo Continuar
 
-1. Abre este archivo
-2. Responde las 3 preguntas (escríbelas en el chat)
-3. Basado en tus respuestas, implementa `CudaMatcher.cpp`
-4. Claude solo corrige si hay errores conceptuales
+1. Responde las 3 preguntas en el chat
+2. Basado en tus respuestas, implementa `CudaMatcher.cpp`
+3. Claude solo corrige si hay errores conceptuales
 
 ## Regla de Oro
 
@@ -50,6 +56,7 @@ matcher->knnMatch(prev_frame->gpu_descriptors, current_frame.gpu_descriptors, kn
 
 ## Archivos Relevantes
 
-- Ver `docs/H12_LEARN.md` para la explicación completa
-- Ver `src/adapters/gpu/OrbCudaExtractor.cpp` como ejemplo de adapter
-- Ver `include/interfaces/IMatcher.hpp` para la interface que debes implementar
+- `docs/H12_LEARN.md` - Explicación completa de Clean Architecture
+- `src/adapters/gpu/OrbCudaExtractor.cpp` - Ejemplo de adapter
+- `include/interfaces/IMatcher.hpp` - Interface que debes implementar
+- `docs/AUDIT.md` - Overview del proyecto (actualizado con H15-H16)

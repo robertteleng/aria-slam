@@ -11,3 +11,4 @@ models/
 *.mp4
 *.avi
 .venv/
+.venv/

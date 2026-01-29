@@ -1,7 +1,7 @@
 # ARIA SLAM - Technical Overview
 
-**Actualizado:** H01-H14 completados, H12 estructura inicial
-**Version:** Fase 1 completa + Clean Architecture scaffold
+**Actualizado:** H01-H16 definidos, H15-H16 planificados
+**Version:** Fase 1 completa + Clean Architecture scaffold + Meta Aria + Audio
 
 ---
 
@@ -213,10 +213,16 @@ include/
     ILoopDetector.hpp
     ISensorFusion.hpp
     IMapper.hpp
+    IAriaDevice.hpp   # H15: Meta Aria connection
+    IAudioFeedback.hpp # H16: Audio system
   adapters/gpu/
     OrbCudaExtractor.hpp
     CudaMatcher.hpp
     YoloTrtDetector.hpp
+  adapters/hardware/
+    AriaDeviceAdapter.hpp  # H15: pybind11 embedding
+  adapters/audio/
+    PulseAudioAdapter.hpp  # H16: Linux audio
   pipeline/
     SlamPipeline.hpp   # Orchestrator con DI
   factory/
@@ -252,3 +258,35 @@ docs/
 | H12 | Clean Architecture | Estructura inicial |
 | H13 | Multithreading | Completado |
 | H14 | GPU Loop Closure | Completado |
+| H15 | Meta Aria Integration | Planificado |
+| H16 | Audio Feedback | Planificado |
+
+---
+
+## Nuevos Hitos (H15-H16)
+
+### H15: Meta Aria Integration
+Conexión a gafas Meta Aria usando pybind11 embedding.
+- SDK de Python embebido en proceso C++
+- Streaming de 3 cámaras (RGB + 2 SLAM)
+- IMU a 1000 Hz
+- Calibración fisheye
+
+Ver: [H15_META_ARIA.md](milestones/H15_META_ARIA.md)
+
+### H16: Audio Feedback System
+Sistema de audio nativo en C++ para navegación.
+- TTS con espeak-ng
+- Beeps espaciales stereo (PulseAudio)
+- Sistema de prioridades y cooldowns
+- Alertas críticas para obstáculos
+
+Ver: [H16_AUDIO_FEEDBACK.md](milestones/H16_AUDIO_FEEDBACK.md)
+
+### Interfaces Creadas
+
+```
+include/interfaces/
+├── IAriaDevice.hpp      # H15: Conexión Meta Aria
+└── IAudioFeedback.hpp   # H16: Sistema de audio
+```
