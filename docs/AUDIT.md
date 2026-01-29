@@ -1,7 +1,7 @@
 # ARIA SLAM - Technical Overview
 
-**Actualizado:** H01-H14 completados
-**Version:** Fase 1 completa
+**Actualizado:** H01-H14 completados, H12 estructura inicial
+**Version:** Fase 1 completa + Clean Architecture scaffold
 
 ---
 
@@ -195,12 +195,32 @@ src/
   Mapper.cpp        # 3D mapping
 
 include/
+  # Legacy (codigo actual)
   Frame.hpp
   TRTInference.hpp
   IMU.hpp
   LoopClosure.hpp
   EuRoCReader.hpp
   Mapper.hpp
+
+  # H12 Clean Architecture (nuevo)
+  core/
+    Types.hpp         # Domain entities: Frame, Pose, KeyFrame, MapPoint
+  interfaces/
+    IFeatureExtractor.hpp
+    IMatcher.hpp
+    IObjectDetector.hpp
+    ILoopDetector.hpp
+    ISensorFusion.hpp
+    IMapper.hpp
+  adapters/gpu/
+    OrbCudaExtractor.hpp
+    CudaMatcher.hpp
+    YoloTrtDetector.hpp
+  pipeline/
+    SlamPipeline.hpp   # Orchestrator con DI
+  factory/
+    PipelineFactory.hpp
 
 models/
   yolo26s.engine    # TensorRT engine
@@ -229,6 +249,6 @@ docs/
 | H09 | Loop Closure | Completado |
 | H10 | Pose Graph | Completado |
 | H11 | CUDA Streams | Completado |
-| H12 | Clean Architecture | Design doc |
+| H12 | Clean Architecture | Estructura inicial |
 | H13 | Multithreading | Completado |
 | H14 | GPU Loop Closure | Completado |

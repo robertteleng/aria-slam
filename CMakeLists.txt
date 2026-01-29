@@ -12,6 +12,7 @@ set(TensorRT_DIR "/home/roberto/libs/TensorRT-10.7.0.23")
 set(TensorRT_INCLUDE_DIRS "${TensorRT_DIR}/include")
 set(TensorRT_LIBS "${TensorRT_DIR}/lib")
 
+# H12 Clean Architecture: include/core, include/interfaces, include/adapters, include/pipeline
 include_directories(
     include
     ${OpenCV_INCLUDE_DIRS}
