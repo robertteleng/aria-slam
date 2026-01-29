@@ -1,4 +1,4 @@
-# Siguiente Sesión: Continuando CudaMatcher
+# Siguiente Sesión: Continuar Clean Architecture
 
 ## Estado Actual
 
@@ -10,32 +10,53 @@
 - `learn/cpp_basics/03_interfaces/` - Interfaces (= 0), polimorfismo
 - `learn/cpp_basics/04_adapter/` - Patrón adapter (traducir tipos)
 
-### CudaMatcher - En progreso
+### CudaMatcher - COMPLETADO
 Archivo: `src/adapters/gpu/CudaMatcher.cpp`
 
-**Lo que ya escribiste:**
-- Vector para guardar resultados: `std::vector<std::vector<cv::DMatch>> knn_matches`
-- For loop con ratio test
-- Traducción `cv::DMatch` → `core::Match`
+Implementación completa:
+- Constructor con `cudaStream_t`
+- Destructor que limpia recursos
+- `match()` con:
+  1. Conversión `std::vector<uint8_t>` → `cv::Mat`
+  2. Upload `cv::Mat` → `cv::cuda::GpuMat`
+  3. `matcher_->knnMatch()`
+  4. Ratio test de Lowe
+  5. Traducción `cv::DMatch` → `core::Match`
 
-**Lo que falta (el TODO):**
-- Convertir `query.descriptors` y `train.descriptors` a `cv::cuda::GpuMat`
-- Llamar a `matcher_->knnMatch(query_gpu, train_gpu, knn_matches, 2)`
+## Diagramas
+
+- **NUEVO:** `docs/CLEAN_ARCHITECTURE_DIAGRAM.md` - Arquitectura limpia actual
+- **LEGACY:** `docs/PIPELINE_DIAGRAM_LEGACY.md` - Sistema viejo (H01-H14)
 
 ## Próximo paso
 
-Completar el TODO en CudaMatcher.cpp:
-1. Convertir `std::vector<uint8_t>` (descriptores) a `cv::Mat`
-2. Subir `cv::Mat` a `cv::cuda::GpuMat`
-3. Llamar a `matcher_->knnMatch(...)`
+Implementar el siguiente adapter. Opciones:
 
-## Metodología
+1. **OrbCudaExtractor** - Extractor de features (implementa `IFeatureExtractor`)
+   - Traduce imagen → `core::Frame` con keypoints y descriptors
 
-Aprendizaje guiado: Claude pregunta, tú respondes, tú escribes el código.
+2. **YoloTrtDetector** - Detector de objetos (implementa `IObjectDetector`)
+   - Traduce imagen → `std::vector<core::Detection>`
+
+## Estructura del proyecto
+
+```
+include/
+├── core/Types.hpp           # Tipos del dominio (Frame, Match, etc.)
+├── interfaces/              # Contratos (= 0)
+│   └── IMatcher.hpp
+├── adapters/gpu/            # Implementaciones
+│   └── CudaMatcher.hpp
+└── legacy/                  # Código viejo
+
+src/
+├── adapters/gpu/
+│   └── CudaMatcher.cpp      # COMPLETADO
+└── legacy/                  # Código viejo
+```
 
 ## Archivos relevantes
-- `src/adapters/gpu/CudaMatcher.cpp` - Tu implementación
-- `include/adapters/gpu/CudaMatcher.hpp` - Header con `matcher_`
-- `include/core/Types.hpp` - `core::Frame`, `core::Match`
-- `src/main.cpp` líneas 158-172 - Código original de referencia
+- `docs/CLEAN_ARCHITECTURE_DIAGRAM.md` - Diagrama de arquitectura
+- `src/adapters/gpu/CudaMatcher.cpp` - Implementación completada
+- `include/interfaces/IFeatureExtractor.hpp` - Siguiente interfaz
 - `learn/cpp_basics/README.md` - Resumen de conceptos C++
