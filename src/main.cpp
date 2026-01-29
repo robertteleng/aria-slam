@@ -156,7 +156,10 @@ int main(int argc, char** argv) {
             !current_frame.gpu_descriptors.empty()) {
 
             std::vector<std::vector<cv::DMatch>> knn_matches;
-            matcher->knnMatch(prev_frame->gpu_descriptors, current_frame.gpu_descriptors, knn_matches, 2);
+            matcher->knnMatch(
+                prev_frame->gpu_descriptors, 
+                current_frame.gpu_descriptors, 
+                knn_matches, 2);
 
             for (auto& knn : knn_matches) {
                 if (knn.size() >= 2 && knn[0].distance < 0.75 * knn[1].distance) {
