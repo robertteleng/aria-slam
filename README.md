@@ -807,7 +807,10 @@ aria-slam/
 ├── datasets/
 │   └── MH_01_easy/            # EuRoC sequences
 ├── models/
-│   └── yolo26s.engine        # YOLO26s TensorRT engine
+│   ├── yolo26s.onnx          # YOLO26s ONNX (portable)
+│   ├── yolo26s_sm75.engine   # TensorRT engine for RTX 2060
+│   ├── yolo26s_sm120.engine  # TensorRT engine for RTX 5060 Ti
+│   └── yolo26s.engine        # Symlink → yolo26s_sm{XX}.engine
 └── build/
 ```
 
@@ -952,11 +955,11 @@ export OpenCV_DIR=~/libs/opencv_cuda
 > - RTX 2060/2070/2080: 7.5
 > - RTX 3060/3070/3080: 8.6
 > - RTX 4060/4070/4080: 8.9
-> - RTX 5060 Ti/5070/5080/5090 (Blackwell): 12.0 - **See [Blackwell Setup Guide](docs/BLACKWELL_SETUP.md)**
+> - RTX 5060 Ti/5070/5080/5090 (Blackwell): 12.0 - **See [GPU Setup Guide](docs/GPU_SETUP.md)**
 
 ### TensorRT (Installation)
 
-> **RTX 50 Series (Blackwell) users:** Standard TensorRT does NOT support SM 120. You must use **TensorRT-RTX** instead. See [Blackwell Setup Guide](docs/BLACKWELL_SETUP.md).
+> **RTX 50 Series (Blackwell) users:** Standard TensorRT does NOT support SM 120. You must use **TensorRT-RTX** instead. See [GPU Setup Guide](docs/GPU_SETUP.md).
 
 ```bash
 # Download TensorRT 10.x from NVIDIA (requires account)
@@ -975,7 +978,11 @@ export PATH=~/libs/TensorRT-10.7.0.23/bin:$PATH
 ./scripts/generate_engine.sh yolo26s
 ```
 
-> **Note:** TensorRT engines are GPU-specific. Run this script on each machine.
+> **Note:** TensorRT engines are GPU-specific. The script auto-detects your GPU and creates:
+> - `yolo26s_sm75.engine` (RTX 2060) or `yolo26s_sm120.engine` (RTX 5060 Ti)
+> - `yolo26s.engine` symlink pointing to the SM-specific engine
+>
+> Run this script on each machine. The ONNX file is portable and shared via git.
 
 ### Verify Installation
 

@@ -1,6 +1,44 @@
-# Blackwell GPU Setup Guide (RTX 50 Series)
+# GPU Setup Guide
 
-This guide documents the specific setup requirements for NVIDIA Blackwell architecture GPUs (RTX 5060 Ti, 5070, 5080, 5090) with compute capability SM 120.
+This guide documents CUDA/TensorRT setup for different NVIDIA GPUs and the multi-GPU workflow.
+
+## Supported GPUs
+
+| GPU Series | Compute Capability | CUDA Arch | Min CUDA | TensorRT |
+|------------|-------------------|-----------|----------|----------|
+| RTX 2060/2070/2080 | 7.5 | sm75 | 10.0 | Standard |
+| RTX 3060/3070/3080 | 8.6 | sm86 | 11.1 | Standard |
+| Jetson Orin Nano | 8.7 | sm87 | 11.4 | Standard |
+| RTX 4060/4070/4080 | 8.9 | sm89 | 11.8 | Standard |
+| RTX 5060 Ti/5070/5080/5090 | 12.0 | sm120 | **12.8** | **TensorRT-RTX** |
+
+---
+
+## Multi-GPU Workflow
+
+If you work on multiple machines (e.g., RTX 2060 + RTX 5060 Ti + Jetson):
+
+**Portable (commit to git):**
+- `models/yolo26s.onnx` - ONNX is universal
+
+**Machine-specific (regenerate):**
+- `models/yolo26s_sm75.engine` - RTX 2060
+- `models/yolo26s_sm87.engine` - Jetson Orin Nano
+- `models/yolo26s_sm120.engine` - RTX 5060 Ti
+
+**Workflow on new machine:**
+```bash
+git pull                           # Get ONNX
+./scripts/generate_engine.sh       # Auto-detect GPU, create engine + symlink
+cd build && cmake .. && make -j$(nproc)
+./aria_slam
+```
+
+The symlink `yolo26s.engine → yolo26s_sm{XX}.engine` ensures code works without modification.
+
+---
+
+## Blackwell-Specific Issues (RTX 50 Series)
 
 ## Overview
 
@@ -136,21 +174,46 @@ make -j$(nproc) && make install
 ```
 or engine loads but inference produces garbage/crashes.
 
-**Cause:** TensorRT engines are GPU-specific. An engine built for compute 7.5 (RTX 2060) won't work on SM 120 (RTX 5060 Ti).
+**Cause:** TensorRT engines are GPU-specific. An engine built for SM 7.5 (RTX 2060) won't work on SM 120 (RTX 5060 Ti).
 
-**Solution:** Regenerate the engine with TensorRT-RTX:
+**Solution:** Use the project script (auto-detects GPU and TensorRT version):
 
 ```bash
-# Use trtexec from TensorRT-RTX
-~/libs/TensorRT-RTX-1.3.0.35/bin/trtexec \
-    --onnx=models/yolo26s.onnx \
-    --saveEngine=models/yolo26s.engine \
-    --fp16
+./scripts/generate_engine.sh yolo26s
 
-# Expected output:
-# [01/25/2025-...] Latency: min = 3.5 ms, max = 4.2 ms, mean = 3.6 ms
-# Throughput: ~280 FPS
+# Creates:
+#   models/yolo26s_sm120.engine  (for your GPU)
+#   models/yolo26s.engine → symlink
 ```
+
+---
+
+## Jetson Orin Nano Setup
+
+The Jetson Orin Nano has a powerful GPU (SM 8.7) but a weak CPU (6-core ARM Cortex-A78AE).
+
+**JetPack includes everything:**
+- CUDA, TensorRT, OpenCV CUDA pre-installed
+- No need to compile OpenCV or download TensorRT
+
+**Critical considerations:**
+- **H13 (Multithreading) is essential** - CPU bottleneck requires async pipeline
+- Loop closure g2o optimization blocks main thread → must run in separate thread
+- YOLO inference should run async to not block ORB processing
+
+**Setup:**
+```bash
+# JetPack 6.x comes with everything
+# Just generate the engine for SM 8.7
+./scripts/generate_engine.sh yolo26s
+
+# Creates: models/yolo26s_sm87.engine
+```
+
+**Performance expectations:**
+- GPU: Comparable to RTX 2060 for inference
+- CPU: Much slower than desktop → multithreading critical
+- Target: 15-20 FPS (vs 30+ on desktop)
 
 ---
 
@@ -165,17 +228,6 @@ export PATH=/usr/local/cuda-12.8/bin:$PATH
 # Aria SLAM libs (TensorRT-RTX + OpenCV CUDA)
 export LD_LIBRARY_PATH="$HOME/libs/TensorRT-RTX-1.3.0.35/lib:$HOME/libs/opencv_cuda/lib:$LD_LIBRARY_PATH"
 ```
-
-## GPU Architecture Reference
-
-| GPU Series | Compute Capability | CUDA Arch | Min CUDA Version |
-|------------|-------------------|-----------|------------------|
-| RTX 2060/2070/2080 | 7.5 | 75 | 10.0 |
-| RTX 3060/3070/3080 | 8.6 | 86 | 11.1 |
-| RTX 4060/4070/4080 | 8.9 | 89 | 11.8 |
-| RTX 5060 Ti/5070/5080/5090 | 12.0 (SM 120) | 120 | **12.8** |
-
----
 
 ## Verification Commands
 
@@ -199,5 +251,4 @@ cd ~/Projects/aria/aria-slam/build
 
 ---
 
-*Last updated: January 2025*
-*Hardware: RTX 5060 Ti (Blackwell SM 120)*
+*Last updated: February 2026*

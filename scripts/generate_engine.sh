@@ -2,6 +2,9 @@
 # Generate TensorRT engine for current GPU
 # Usage: ./generate_engine.sh [model_name]
 # Example: ./generate_engine.sh yolo26s
+#
+# Generates: models/yolo26s_sm75.engine  (for RTX 2060)
+#            models/yolo26s_sm120.engine (for RTX 5060 Ti)
 
 set -e
 
@@ -19,18 +22,21 @@ if [ -z "$GPU_NAME" ]; then
     exit 1
 fi
 
+# Detect compute capability (e.g., 7.5 -> 75, 12.0 -> 120)
+SM_RAW=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1)
+SM=$(echo "$SM_RAW" | tr -d '.')
+
 echo "=== TensorRT Engine Generator ==="
 echo "GPU: $GPU_NAME"
+echo "Compute Capability: SM $SM ($SM_RAW)"
 echo "Model: $MODEL"
 
-# Detect compute capability
-SM=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '.')
-echo "Compute Capability: SM $SM"
-
-# Check if ONNX exists, if not download
+# Check if ONNX exists
 ONNX_FILE="$MODELS_DIR/${MODEL}.onnx"
 if [ ! -f "$ONNX_FILE" ]; then
-    echo "Downloading $MODEL.onnx from Ultralytics..."
+    echo ""
+    echo "ONNX file not found: $ONNX_FILE"
+    echo "Downloading $MODEL from Ultralytics..."
     pip install ultralytics -q 2>/dev/null || true
     python3 -c "
 from ultralytics import YOLO
@@ -43,11 +49,11 @@ fi
 
 # Find trtexec
 TRTEXEC=""
-if command -v trtexec &>/dev/null; then
+if [ -f "$HOME/libs/TensorRT-RTX-1.3.0.35/bin/trtexec" ]; then
+    # TensorRT-RTX for Blackwell (SM 120)
+    TRTEXEC="$HOME/libs/TensorRT-RTX-1.3.0.35/bin/trtexec"
+elif command -v trtexec &>/dev/null; then
     TRTEXEC="trtexec"
-elif [ -f "$HOME/libs/TensorRT-RTX-1.3.0.35/bin/tensorrt_rtx" ]; then
-    # Blackwell (SM 120) uses TensorRT-RTX
-    TRTEXEC="$HOME/libs/TensorRT-RTX-1.3.0.35/bin/tensorrt_rtx"
 elif [ -f "/usr/src/tensorrt/bin/trtexec" ]; then
     # Jetson
     TRTEXEC="/usr/src/tensorrt/bin/trtexec"
@@ -68,27 +74,27 @@ fi
 
 echo "Using: $TRTEXEC"
 
-# Generate engine
-ENGINE_FILE="$MODELS_DIR/${MODEL}.engine"
+# Engine file with SM suffix
+ENGINE_FILE="$MODELS_DIR/${MODEL}_sm${SM}.engine"
+echo ""
 echo "Generating engine: $ENGINE_FILE"
 
-# TensorRT-RTX uses different flags
-if [[ "$TRTEXEC" == *"tensorrt_rtx"* ]]; then
-    $TRTEXEC \
-        --onnx="$ONNX_FILE" \
-        --saveEngine="$ENGINE_FILE" \
-        --memPoolSize=workspace:4096M
-else
-    $TRTEXEC \
-        --onnx="$ONNX_FILE" \
-        --saveEngine="$ENGINE_FILE" \
-        --fp16 \
-        --workspace=4096
-fi
+# Generate engine (new syntax for TensorRT 10.x)
+$TRTEXEC \
+    --onnx="$ONNX_FILE" \
+    --saveEngine="$ENGINE_FILE" \
+    --fp16 \
+    --memPoolSize=workspace:4096MiB
+
+# Create symlink to generic name for backwards compatibility
+GENERIC_ENGINE="$MODELS_DIR/${MODEL}.engine"
+rm -f "$GENERIC_ENGINE"
+ln -sf "${MODEL}_sm${SM}.engine" "$GENERIC_ENGINE"
 
 echo ""
 echo "=== Done ==="
 echo "Engine saved: $ENGINE_FILE"
+echo "Symlink: $GENERIC_ENGINE -> ${MODEL}_sm${SM}.engine"
 echo ""
 echo "Benchmark:"
-$TRTEXEC --loadEngine="$ENGINE_FILE" --warmUp=500 --iterations=100 2>&1 | grep -E "Throughput|Latency.*mean"
+$TRTEXEC --loadEngine="$ENGINE_FILE" --warmUp=500 --iterations=100 2>&1 | grep -E "Throughput|Latency.*mean" || true
