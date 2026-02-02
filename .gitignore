@@ -12,3 +12,4 @@ models/
 *.avi
 .venv/
 .venv/
+.vscode/settings.json
