@@ -680,6 +680,28 @@ flowchart LR
 
 **Related project:** [aria-scene](https://github.com/robertteleng/aria-scene) - Python VLM module with FastVLM + FastViT hybrid engine
 
+### Priority Abstraction Layers (Safety Hierarchy)
+
+To make the decision logic explicit, the system follows a 3-layer priority hierarchy:
+
+1. **Layer 1 - Critical Reactive Layer (hard real-time)**
+   - Immediate hazard response (collision risk, emergency alerts, minimum safe behavior).
+   - Owns the final veto: if uncertain, default to safety.
+   - Must never block on higher-level reasoning.
+
+2. **Layer 2 - Path Planning Layer (tactical)**
+   - Local/global path generation on top of SLAM map (A*/RRT*, waypoint selection, replanning).
+   - Uses dynamic obstacle information when available.
+   - If unavailable or stale, Layer 1 remains in control.
+
+3. **Layer 3 - Contextual Reasoning Layer (non-critical)**
+   - Semantic interpretation with VLM (FastViT/FastVLM), scene narration, intent-level guidance.
+   - Improves route quality and user understanding, but is optional for safe operation.
+
+**Priority Rule:** `Layer 1 > Layer 2 > Layer 3`.
+
+**Fallback Rule:** Any timeout, disagreement, or degraded signal falls back to the lower-latency, higher-priority layer.
+
 ---
 
 ## Project Milestones
@@ -722,6 +744,16 @@ flowchart LR
 | H20 | Path Planning | A*/RRT* navigation on 3D map | ⏳ |
 | H21 | Pangolin Visualization | 3D real-time trajectory and map viewer | ⏳ |
 | H22 | Obstacle Avoidance | Depth-based alerts with spatial audio feedback | ⏳ |
+
+#### H22 Scope (Streaming)
+
+- H22.1: Real-time traffic light detection with state classification (red/yellow/green).
+- H22.2: Real-time key sign detection (stop, yield, speed limit).
+- H22.3: Alert prioritization by risk + zone + distance with anti-spam cooldowns.
+
+#### H25 Scope (Semantic Upgrade)
+
+- Advanced sign/scene semantic interpretation using VLM over ROS2 topics.
 
 ### Phase 4: Production ⏳
 
